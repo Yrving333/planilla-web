@@ -1,4 +1,4 @@
-// server.cjs (v3) — Express + Neon/Postgres — esquema robusto
+// server.cjs (v4) — Express + Neon/Postgres — robusto y con transacciones
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -32,11 +32,30 @@ const norm = s =>
 const serieFromName = (n = '', a = '') =>
   norm(n).slice(0, 2) + norm(a).slice(0, 2) + '001';
 
+const normalizeFecha = (f) => {
+  const s = String(f || '').trim();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    const [dd, mm, yy] = s.split('/');
+    return `${yy}-${mm}-${dd}`; // ISO
+  }
+  // si ya viene en ISO, úsalo
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return s; // fallback (no aborta)
+};
+
+const errMsg = (e, fallback = 'Error inesperado') => {
+  if (!e) return fallback;
+  if (e.msg) return e.msg;
+  if (e.detail) return e.detail;
+  if (e.hint) return e.hint;
+  if (e.code) return `${fallback} (PG:${e.code})`;
+  return fallback;
+};
+
 /* =========================
    BOOTSTRAP DE ESQUEMA
    ========================= */
 async function bootstrap() {
-  // 1) Tablas base (idempotentes)
   await q(`
     CREATE TABLE IF NOT EXISTS empresas (
       id         TEXT PRIMARY KEY,
@@ -56,11 +75,11 @@ async function bootstrap() {
       created_at  TIMESTAMP DEFAULT NOW()
     );
 
-    -- Asegurar columnas que usa la app (no rompe si ya existen con otro tipo)
+    -- Asegura columnas que usa la app
     ALTER TABLE usuarios
       ADD COLUMN IF NOT EXISTS role        TEXT,
       ADD COLUMN IF NOT EXISTS rol         TEXT,
-      ADD COLUMN IF NOT EXISTS activo      TEXT,            -- si ya existe (bool/int), no se toca
+      ADD COLUMN IF NOT EXISTS activo      TEXT,
       ADD COLUMN IF NOT EXISTS empresaid   TEXT REFERENCES empresas(id),
       ADD COLUMN IF NOT EXISTS proydef     TEXT,
       ADD COLUMN IF NOT EXISTS proys       TEXT[] DEFAULT '{}',
@@ -75,7 +94,7 @@ async function bootstrap() {
       id         SERIAL PRIMARY KEY,
       dni        TEXT,
       email      TEXT,
-      fecha      TEXT,        -- YYYY-MM-DD
+      fecha      TEXT,        -- ISO: YYYY-MM-DD
       serie      TEXT,
       num        TEXT,
       trabajador TEXT,
@@ -89,11 +108,8 @@ async function bootstrap() {
       created_at TIMESTAMP DEFAULT NOW()
     );
 
-    -- Vista de login robusta:
-    --  - convierte activo 0/1/t/f/true/false a boolean
-    --  - unifica role/rol y lo expone como "rol"
+    -- Vista de login robusta: normaliza 'activo' y unifica role/rol
     DROP VIEW IF EXISTS v_usuarios_login;
-
     CREATE VIEW v_usuarios_login AS
     SELECT
       email,
@@ -115,7 +131,7 @@ async function bootstrap() {
     FROM usuarios;
   `);
 
-  // 2) Seed mínimo si la tabla está vacía (sin meter 'activo' para evitar choque de tipos)
+  // Seed mínimo si está vacío
   const seeded = await q(`SELECT 1 FROM usuarios LIMIT 1`);
   if (!seeded.rows.length) {
     await q(`
@@ -125,21 +141,11 @@ async function bootstrap() {
       ('CONS_PADOVA','CONSTRUCTORA PADOVA S.A.C.','20601444341','JR. LAS PONCIANAS 139 OF.201 - LA MOLINA VIEJA','495-1331')
       ON CONFLICT (id) DO NOTHING;
 
-      INSERT INTO usuarios (email,dni,nombres,apellidos,role,rol,empresaid,proydef,proys)
+      INSERT INTO usuarios (email,dni,nombres,apellidos,role,rol,empresaid,proydef,proys,activo)
       VALUES
-      ('admin@empresa.com','44895702','YRVING','LEON','ADMIN_PADOVA','ADMIN_PADOVA','INV_PADOVA','ADMIN PADOVA','{}'),
-      ('usuario@empresa.com','44081950','JOEL','GARGATE','USUARIO','USUARIO','CONS_PADOVA','SANTA BEATRIZ','{"SANTA BEATRIZ"}')
+      ('admin@empresa.com','44895702','YRVING','LEON','ADMIN_PADOVA','ADMIN_PADOVA','INV_PADOVA','ADMIN PADOVA','{}','1'),
+      ('usuario@empresa.com','44081950','JOEL','GARGATE','USUARIO','USUARIO','CONS_PADOVA','SANTA BEATRIZ','{"SANTA BEATRIZ"}','1')
       ON CONFLICT (email) DO NOTHING;
-    `);
-
-    // Ajusta 'activo' a TRUE sin importar el tipo real de la columna
-    await q(`
-      UPDATE usuarios
-      SET activo = CASE
-        WHEN pg_typeof(activo)::text = 'boolean' THEN TRUE::text
-        ELSE '1'
-      END
-      WHERE email IN ('admin@empresa.com','usuario@empresa.com');
     `);
   }
 }
@@ -215,7 +221,7 @@ app.put('/api/empresas', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, msg: errMsg(e, 'Error guardando empresas') });
   }
 });
 
@@ -243,7 +249,6 @@ app.get('/api/usuarios', async (_req, res) => {
   }
 });
 
-// Upsert SIN activo (para evitar choques de tipo). Luego se actualiza activo con lógica tipo-segura.
 app.put('/api/usuarios', async (req, res) => {
   try {
     const list = Array.isArray(req.body) ? req.body : [];
@@ -255,11 +260,11 @@ app.put('/api/usuarios', async (req, res) => {
         : [];
       await q(
         `
-        INSERT INTO usuarios (email,dni,nombres,apellidos,role,rol,empresaid,proydef,proys)
-        VALUES (lower($1),$2,$3,$4,$5,$6,$7,$8,$9::text[])
+        INSERT INTO usuarios (email,dni,nombres,apellidos,role,rol,empresaid,proydef,proys,activo)
+        VALUES (lower($1),$2,$3,$4,$5,$6,$7,$8,$9::text[],CASE WHEN $10::boolean THEN '1' ELSE '0' END)
         ON CONFLICT (email) DO UPDATE SET
           dni=$2, nombres=$3, apellidos=$4,
-          role=$5, rol=$6, empresaid=$7, proydef=$8, proys=$9::text[]
+          role=$5, rol=$6, empresaid=$7, proydef=$8, proys=$9::text[], activo=CASE WHEN $10::boolean THEN '1' ELSE '0' END
       `,
         [
           u.email,
@@ -270,24 +275,10 @@ app.put('/api/usuarios', async (req, res) => {
           u.rol || u.role || 'USUARIO',
           u.empresaid || null,
           norm(u.proydef || ''),
-          proys
+          proys,
+          !!u.activo
         ]
       );
-
-      // Ahora sí, setear 'activo' de forma segura según el tipo real
-      if (typeof u.activo !== 'undefined') {
-        await q(
-          `
-          UPDATE usuarios
-          SET activo = CASE
-            WHEN pg_typeof(activo)::text = 'boolean' THEN $2::boolean::text
-            ELSE CASE WHEN $2::boolean THEN '1' ELSE '0' END
-          END
-          WHERE email = lower($1)
-        `,
-          [u.email, !!u.activo]
-        );
-      }
 
       if (u.dni)
         await q(
@@ -298,7 +289,7 @@ app.put('/api/usuarios', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, msg: errMsg(e, 'Error guardando usuarios') });
   }
 });
 
@@ -310,7 +301,7 @@ app.delete('/api/usuarios', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, msg: errMsg(e, 'Error eliminando usuarios') });
   }
 });
 
@@ -329,8 +320,9 @@ app.put('/api/usuarios/modal', async (req, res) => {
         `
         UPDATE usuarios SET
           dni=$1, nombres=$2, apellidos=$3,
-          role=$4, rol=$4, empresaid=$5, proydef=$6, proys=$7::text[], email=lower($8)
-        WHERE dni=$9
+          role=$4, rol=$4, empresaid=$5, proydef=$6, proys=$7::text[], email=lower($8),
+          activo=CASE WHEN $9::boolean THEN '1' ELSE '0' END
+        WHERE dni=$10
       `,
         [
           r.dni,
@@ -341,16 +333,17 @@ app.put('/api/usuarios/modal', async (req, res) => {
           norm(r.proydef || ''),
           proys,
           r.email,
+          !!r.activo,
           body.from
         ]
       );
     } else {
       await q(
         `
-        INSERT INTO usuarios (email,dni,nombres,apellidos,role,rol,empresaid,proydef,proys)
-        VALUES (lower($1),$2,$3,$4,$5,$5,$6,$7,$8::text[])
+        INSERT INTO usuarios (email,dni,nombres,apellidos,role,rol,empresaid,proydef,proys,activo)
+        VALUES (lower($1),$2,$3,$4,$5,$5,$6,$7,$8::text[],CASE WHEN $9::boolean THEN '1' ELSE '0' END)
         ON CONFLICT (email) DO UPDATE SET
-          dni=$2, nombres=$3, apellidos=$4, role=$5, rol=$5, empresaid=$6, proydef=$7, proys=$8::text[]
+          dni=$2, nombres=$3, apellidos=$4, role=$5, rol=$5, empresaid=$6, proydef=$7, proys=$8::text[], activo=CASE WHEN $9::boolean THEN '1' ELSE '0' END
       `,
         [
           r.email,
@@ -360,23 +353,9 @@ app.put('/api/usuarios/modal', async (req, res) => {
           r.rol || 'USUARIO',
           r.empresaid || null,
           norm(r.proydef || ''),
-          proys
+          proys,
+          !!r.activo
         ]
-      );
-    }
-
-    // Actualiza activo con lógica segura si vino en el payload
-    if (typeof r.activo !== 'undefined') {
-      await q(
-        `
-        UPDATE usuarios
-        SET activo = CASE
-          WHEN pg_typeof(activo)::text = 'boolean' THEN $2::boolean::text
-          ELSE CASE WHEN $2::boolean THEN '1' ELSE '0' END
-        END
-        WHERE email = lower($1)
-      `,
-        [r.email, !!r.activo]
       );
     }
 
@@ -389,11 +368,11 @@ app.put('/api/usuarios/modal', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, msg: errMsg(e, 'Error guardando usuario (modal)') });
   }
 });
 
-/* ===== Counters & Planillas ===== */
+/* ===== Counters ===== */
 app.get('/api/counters/next', async (req, res) => {
   try {
     const dni = String(req.query.dni || '');
@@ -413,39 +392,53 @@ app.get('/api/counters/next', async (req, res) => {
   }
 });
 
+/* ===== Planillas (TRANSACCIÓN) ===== */
 app.post('/api/planillas', async (req, res) => {
+  const client = await pool.connect();
   try {
     const { dni, email, fecha, items = [] } = req.body || {};
     if (!dni || !email || !fecha || !Array.isArray(items) || !items.length) {
-      return res.status(400).json({ ok: false, msg: 'payload invalido' });
+      return res.status(400).json({ ok: false, msg: 'Payload inválido' });
     }
 
+    const fechaISO = normalizeFecha(fecha);
+
+    await client.query('BEGIN');
+
+    // Usuario
     const u = (
-      await q(
+      await client.query(
         `SELECT * FROM v_usuarios_login WHERE email ILIKE $1 LIMIT 1`,
         [String(email).toLowerCase()]
       )
     ).rows[0];
-    if (!u) return res.status(400).json({ ok: false, msg: 'usuario no existe' });
+    if (!u) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ ok: false, msg: 'Usuario no existe' });
+    }
 
+    // Acumulado (para tope)
     const acc = (
-      await q(
+      await client.query(
         `SELECT COALESCE(SUM(total),0) AS s FROM historial WHERE dni=$1 AND fecha=$2`,
-        [dni, fecha]
+        [dni, fechaISO]
       )
     ).rows[0].s;
+
     const totalItems = Number(
       items.reduce((a, b) => a + Number(b.monto || 0), 0).toFixed(2)
     );
+
     if (Number(acc) + totalItems > TOPE) {
-      return res.status(400).json({
-        ok: false,
-        msg: `Excede el tope diario de S/${TOPE}. Acumulado: S/${acc}`
-      });
+      await client.query('ROLLBACK');
+      return res
+        .status(400)
+        .json({ ok: false, msg: `Excede el tope diario de S/${TOPE}. Acumulado: S/${acc}` });
     }
 
+    // Correlativo
     const next = (
-      await q(
+      await client.query(
         `
         INSERT INTO counters (dni,n) VALUES ($1,0)
         ON CONFLICT (dni) DO UPDATE SET n=counters.n+1
@@ -458,17 +451,20 @@ app.post('/api/planillas', async (req, res) => {
     const num = pad(next);
     const serie = serieFromName(u.nombres, u.apellidos);
 
+    // Inserta cada ítem
     for (const it of items) {
       const total = Number((Number(it.monto || 0)).toFixed(2));
-      await q(
+      await client.query(
         `
-        INSERT INTO historial (dni,email,fecha,serie,num,trabajador,proyecto,destino,motivo,pc,monto,total,empresaid)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        INSERT INTO historial
+          (dni,email,fecha,serie,num,trabajador,proyecto,destino,motivo,pc,monto,total,empresaid)
+        VALUES
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
       `,
         [
           dni,
           String(email).toLowerCase(),
-          fecha,
+          fechaISO,
           serie,
           num,
           `${u.nombres} ${u.apellidos}`,
@@ -483,21 +479,27 @@ app.post('/api/planillas', async (req, res) => {
       );
     }
 
+    // Empresa
     const emp =
       (
-        await q(
+        await client.query(
           `SELECT id,razon,ruc,direccion,telefono,logo FROM empresas WHERE id=$1`,
           [u.empresaid || null]
         )
       ).rows[0] || null;
 
+    await client.query('COMMIT');
     res.json({ ok: true, serie, num, total: totalItems, empresa: emp });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok: false });
+    try { await q('ROLLBACK'); } catch(_){}
+    console.error('POST /api/planillas error:', e);
+    res.status(400).json({ ok: false, msg: errMsg(e, 'Error al guardar la planilla') });
+  } finally {
+    try { client.release(); } catch(_){}
   }
 });
 
+/* ===== Historial ===== */
 app.get('/api/historial', async (req, res) => {
   try {
     const dni = req.query.dni ? String(req.query.dni) : null;
@@ -514,7 +516,7 @@ app.get('/api/historial', async (req, res) => {
 app.get('/api/historial/acumulado', async (req, res) => {
   try {
     const dni = String(req.query.dni || '');
-    const fecha = String(req.query.fecha || '');
+    const fecha = normalizeFecha(String(req.query.fecha || ''));
     if (!dni || !fecha) return res.json({ acumulado: 0 });
     const r = await q(
       `SELECT COALESCE(SUM(total),0) AS s FROM historial WHERE dni=$1 AND fecha=$2`,
@@ -542,7 +544,7 @@ app.put('/api/historial', async (req, res) => {
           c.id,
           c.serie,
           c.num,
-          c.fecha,
+          normalizeFecha(c.fecha),
           c.trabajador,
           c.proyecto,
           c.destino,
@@ -556,7 +558,7 @@ app.put('/api/historial', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, msg: errMsg(e, 'Error editando historial') });
   }
 });
 
@@ -568,7 +570,7 @@ app.delete('/api/historial', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, msg: errMsg(e, 'Error eliminando del historial') });
   }
 });
 
@@ -583,7 +585,7 @@ app.post('/api/admin/pin', async (req, res) => {
   }
 });
 
-/* ===== Static (opcional) ===== */
+/* ===== Static ===== */
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (_req, res) => res.type('text').send('OK'));
 
