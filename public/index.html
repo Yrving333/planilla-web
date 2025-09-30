@@ -20,7 +20,7 @@
   body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);padding:20px;display:flex;justify-content:center}
   .app{width:100%;max-width:1180px}
   .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-  .who{font-size:.88rem;color:var(--muted)} /* más pequeño y tenue */
+  .who{font-size:.88rem;color:var(--muted)}
   .btn{border:none;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;letter-spacing:.2px}
   .btn.primary{background:var(--primary);color:#fff;box-shadow:0 6px 20px rgba(37,99,235,.18)}
   .btn.primary:hover{background:var(--primary-600)}
@@ -32,7 +32,7 @@
   .view{display:none}.view.active{display:block}
 
   .card{background:var(--card);border-radius:16px;box-shadow:0 10px 28px rgba(2,8,23,.06);margin-bottom:16px;overflow:hidden}
-  .card-h,.card-b{padding:18px 20px}.card-h{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#ffffff, #fbfdff)}
+  .card-h,.card-b{padding:18px 20px}.card-h{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#ffffff,#fbfdff)}
   .brand{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
   .brand img{max-height:42px}
   .cinfo{font-size:.86rem;color:var(--muted);text-align:right;line-height:1.45}
@@ -188,6 +188,7 @@
       <div class="card-b">
         <div style="display:flex;gap:8px;margin-bottom:8px">
           <button id="usr-add" class="btn ghost" disabled>Agregar usuario</button>
+          <button id="usr-del" class="btn danger" disabled>Eliminar seleccionados</button>
           <button id="usr-save" class="btn primary" disabled>Guardar cambios</button>
         </div>
         <div class="table-wrap"><div id="usr-table"></div></div>
@@ -238,7 +239,7 @@
       <div id="login-local">
         <div class="group"><label>Email</label><input id="local-email" type="email" placeholder="admin@empresa.com"></div>
         <div class="group" style="margin-top:8px"><label>Clave</label><input id="local-pass" type="password" placeholder="******"></div>
-        <div class="hint">Se valida contra la tabla <b>usuarios</b> (Render/Neon). La clave no se evalúa.</div>
+        <div class="hint">Se valida contra la tabla <b>usuarios</b>. La clave no se evalúa.</div>
         <div class="login-actions">
           <button class="btn primary" id="btn-local-login">Entrar</button>
         </div>
@@ -251,7 +252,6 @@
 /* ===================== CONFIG ===================== */
 const TOPE = 45.00;
 const PC_CODES = ['94303','95301','95303','234120502','234120503'];
-
 window.jsPDF = window.jspdf.jsPDF;
 
 /* ======= Estado ======= */
@@ -265,10 +265,11 @@ const normalizar=t=>(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 const serieFromName=(n,a)=>(n.slice(0,2)+a.slice(0,2)).toUpperCase()+'001';
 const qs = sel => document.querySelector(sel);
 const qsa = sel => Array.from(document.querySelectorAll(sel));
+
 function setHeaderEmpresa(emp){
   const logo=qs('#logo'), cinfo=qs('#cinfo');
-  if(emp){ if(emp.logo){logo.src=emp.logo;logo.style.display='block';} else logo.style.display='none';
-    cinfo.innerHTML=`<b>${emp.razon}</b><br>R.U.C. ${emp.ruc}<br><span id="caddr">${emp.direccion||''}</span>`;
+  if(emp){ if(emp.logo){ try{logo.src=emp.logo;logo.style.display='block';}catch{logo.style.display='none';} } else logo.style.display='none';
+    cinfo.innerHTML=`<b>${emp.razon||''}</b><br>R.U.C. ${emp.ruc||''}<br><span id="caddr">${emp.direccion||''}</span>`;
   }else{ logo.style.display='none'; cinfo.innerHTML=`<b>—</b><br>R.U.C. —<br><span id="caddr"></span>`; }
 }
 
@@ -295,10 +296,10 @@ async function localLogin(){
   initMainUI();
 }
 
-/* ======= Carga Inicial ======= */
+/* ======= Carga ======= */
 async function loadAll(){
   CACHE.empresas = await api('/api/empresas');
-  CACHE.usuarios  = await api('/api/usuarios');            // backend devuelve todos (pero el front filtra)
+  CACHE.usuarios  = await api('/api/usuarios');
 }
 function isAdmin(){ return SESSION.rol==='ADMIN_PADOVA'; }
 function applySessionUI(){
@@ -325,18 +326,29 @@ function renderTrabajadoresSelect(){
   const users=CACHE.usuarios.filter(u=>u.activo);
   const list=isAdmin()?users:users.filter(u=>u.email?.toLowerCase()===SESSION.email);
   list.forEach(u=>{const o=document.createElement('option');o.value=u.dni;o.textContent=`${u.nombres} ${u.apellidos}`;sel.appendChild(o);});
-  if(list.length>0) sel.value=list[0].dni;
+  // <-- preferir SIEMPRE el propio usuario logueado
+  if(list.some(u=>u.dni===SESSION.dni)) sel.value=SESSION.dni;
+  else if(list.length>0) sel.value=list[0].dni;
 }
-function onTrabajadorChange(){
+async function updateSerieHeader(){
+  const serie=serieFromName(normalizar(CURRENT_USER.nombres),normalizar(CURRENT_USER.apellidos));
+  try{
+    const r = await api(`/api/counters/next?dni=${encodeURIComponent(CURRENT_USER.dni)}`);
+    const num = r?.next || '00000';
+    qs('#h-num').textContent=`Planilla Nro. ${serie}-${num}`;
+  }catch{
+    qs('#h-num').textContent=`Planilla Nro. ${serie}-xxxxx`;
+  }
+}
+async function onTrabajadorChange(){
   const dni=qs('#sel-trabajador').value;
   CURRENT_USER = CACHE.usuarios.find(u=>u.dni===dni)||null;
-  const h=qs('#h-num'), proy=qs('#p-proy');
+  const proy=qs('#p-proy');
   if(CURRENT_USER){
-    const serie=serieFromName(normalizar(CURRENT_USER.nombres),normalizar(CURRENT_USER.apellidos));
-    h.textContent=`Planilla Nro. ${serie}-xxxxx`;
+    await updateSerieHeader();
     proy.textContent=`PROYECTO PRINCIPAL: ${CURRENT_USER.proydef||CURRENT_USER.proyDef||'—'}`;
   }else{
-    h.textContent='PLANILLA DE MOVILIDAD'; proy.textContent='PROYECTO PRINCIPAL: —';
+    qs('#h-num').textContent='PLANILLA DE MOVILIDAD'; proy.textContent='PROYECTO PRINCIPAL: —';
   }
   setHeaderEmpresa(CURRENT_USER?getEmpresaById(CURRENT_USER.empresaid||CURRENT_USER.empresaId):null);
   refreshProyectoControls();
@@ -394,12 +406,12 @@ async function updateTotalsUI(alerta=false){
   totalEl.classList.toggle('ok',!exceed); totalEl.classList.toggle('bad',exceed);
   qs('#btn-save').disabled=exceed||!CURRENT_USER;
   qs('#over-alert').style.display=exceed?'block':'none';
-  if(alerta && exceed && !LAST_EXCEDE){ alert('No puedes superar S/ 45 por día/usuario (incluye lo ya registrado).'); }
+  if(alerta && exceed && !LAST_EXCEDE){ alert('No puedes superar S/ 45 por día/usuario.'); }
   LAST_EXCEDE=exceed;
 }
 
 /* ======= Historial ======= */
-async function renderHistorial(edit=false){
+async function renderHistorial(){
   if(!isAdmin() || !ADMIN_OK){ HIST_EDIT=false; }
   const wrap=qs('#hist');
   const list = await api('/api/historial?scope='+(isAdmin()?'all':'mine'));
@@ -463,7 +475,6 @@ async function guardarPlanilla(){
     const res = await api('/api/planillas',{method:'POST', body:JSON.stringify({
       dni: CURRENT_USER.dni, email: SESSION.email, fecha, items
     })});
-    // PDF
     const {serie,num,total,empresa} = res;
     await renderPDF({fecha, items, total, serie, num, emp:empresa, u:CURRENT_USER});
     alert(`Planilla ${serie}-${num} guardada y exportada.`);
@@ -491,12 +502,12 @@ async function renderPDF({fecha,items,total,serie,num,emp,u}){
   doc.line(15,y,195,y); y+=7; doc.setFont(undefined,'bold'); doc.text('Total S/.',165,y); doc.text(Number(total).toFixed(2),195,y,{align:'right'});
   doc.line(80,y+40,140,y+40); doc.text('Firma del Trabajador', doc.internal.pageSize.getWidth()/2,y+45,{align:'center'});
   doc.setFontSize(7); doc.setTextColor(100);
-  const disclaimer="Base Legal: Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del artículo 21° del Reglamento de la ley del Impuesto a la Renta, Nota: La falta de consignación de la fecha en que se incurrió en el gasto, nombres y apellidos de cada trabajador, número de DNI, motivo y destino del desplazamiento y monto gastado, respecto a cada desplazamiento sólo inhabilita la planilla para la sustentación del gasto que corresponda a tal desplazamiento. (*) Numeración de la planilla.";
+  const disclaimer="Base Legal: Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del artículo 21° del Reglamento de la ley del Impuesto a la Renta. La falta de consignación de la fecha, nombres y apellidos, DNI, motivo/destino y monto sólo inhabilita la planilla de ese desplazamiento.";
   doc.text(doc.splitTextToSize(disclaimer,180),15, doc.internal.pageSize.getHeight()-20);
   doc.save(`Planilla_${serie}-${num}.pdf`);
 }
 
-/* ======= Admin: PIN y tablas ======= */
+/* ======= Admin ======= */
 function pinOK(){ return ADMIN_OK && isAdmin(); }
 
 qs('#btn-admin-pin').addEventListener('click', async ()=>{
@@ -504,7 +515,7 @@ qs('#btn-admin-pin').addEventListener('click', async ()=>{
   const r = await api('/api/admin/pin',{method:'POST', body:JSON.stringify({pin})});
   ADMIN_OK = !!r.ok;
   qs('#pin-ok').textContent=ADMIN_OK?'Acceso concedido':'PIN incorrecto';
-  ['emp-add','emp-save','usr-add','usr-save'].forEach(id=>qs('#'+id).disabled=!ADMIN_OK);
+  ['emp-add','emp-save','usr-add','usr-save','usr-del'].forEach(id=>qs('#'+id).disabled=!ADMIN_OK);
   if(!ADMIN_OK){ HIST_EDIT=false; renderHistorial(); }
 });
 
@@ -542,11 +553,12 @@ async function renderUsuariosTable(){
   if(!isAdmin()){ qs('#usr-table').innerHTML=''; return; }
   const list=CACHE.usuarios, emps=CACHE.empresas;
   let html=`<table class="tbl"><thead><tr>
-    <th class="w-s">Activo</th><th class="w-m">DNI</th><th class="w-l">Nombres</th><th class="w-l">Apellidos</th><th class="w-l">Empresa</th><th class="w-m">Rol</th><th class="w-l">Proy. Defecto</th><th class="w-l">Proyectos (coma)</th><th class="w-l">Email</th>
+    <th class="center w-s">Sel</th><th class="w-s">Activo</th><th class="w-m">DNI</th><th class="w-l">Nombres</th><th class="w-l">Apellidos</th><th class="w-l">Empresa</th><th class="w-m">Rol</th><th class="w-l">Proy. Defecto</th><th class="w-l">Proyectos (coma)</th><th class="w-l">Email</th>
   </tr></thead><tbody>`;
   list.forEach((u,idx)=>{
     const proys=(u.proyectos||(u.proys||[])).join(', ');
     html+=`<tr data-idx="${idx}">
+      <td class="center"><input type="checkbox" class="rowchk"></td>
       <td class="center"><input type="checkbox" data-f="activo" ${u.activo?'checked':''}></td>
       <td><input value="${u.dni}" data-f="dni" class="w-m"></td>
       <td><input value="${u.nombres||''}" data-f="nombres" class="uppercase w-l"></td>
@@ -561,6 +573,7 @@ async function renderUsuariosTable(){
   html+='</tbody></table>'; qs('#usr-table').innerHTML=html;
 }
 
+/* botones usuarios/empresas */
 qs('#emp-add').addEventListener('click', ()=>{
   if(!pinOK()) return; CACHE.empresas.push({id:'NEW_ID',razon:'',ruc:'',direccion:'',telefono:'',logo:''}); renderEmpresasTable();
 });
@@ -583,6 +596,16 @@ qs('#usr-add').addEventListener('click', ()=>{
   if(!pinOK()) return; const first=CACHE.empresas[0]?.id||'INV_PADOVA';
   CACHE.usuarios.push({activo:true,dni:'NEW_DNI',nombres:'',apellidos:'',empresaid:first,rol:'USUARIO',proyectos:[],proydef:'',email:''});
   renderUsuariosTable(); renderTrabajadoresSelect();
+});
+qs('#usr-del').addEventListener('click', async ()=>{
+  if(!pinOK()) return;
+  const rows=qsa('#usr-table tbody tr');
+  const dnis=rows.filter(tr=>tr.querySelector('.rowchk')?.checked).map(tr=>tr.querySelector('[data-f="dni"]').value.trim());
+  if(!dnis.length){ alert('Selecciona al menos un usuario.'); return; }
+  if(!confirm('¿Eliminar los usuarios seleccionados?')) return;
+  await api('/api/usuarios',{method:'DELETE', body:JSON.stringify({dnis})});
+  CACHE.usuarios = await api('/api/usuarios');
+  renderUsuariosTable(); renderTrabajadoresSelect(); onTrabajadorChange();
 });
 qs('#usr-save').addEventListener('click', async ()=>{
   if(!pinOK()) return;
@@ -608,7 +631,7 @@ qs('#usr-save').addEventListener('click', async ()=>{
   renderUsuariosTable(); renderTrabajadoresSelect(); onTrabajadorChange();
 });
 
-/* ======= Modal Trabajador (atajos admin) ======= */
+/* ======= Modal ======= */
 function openTrabajadorEditor(edit){
   if(!isAdmin()){ alert('Solo administradores.'); return; }
   const mEmp=qs('#m-empresa'); mEmp.innerHTML='';
@@ -621,7 +644,8 @@ function openTrabajadorEditor(edit){
 }
 function setV(id,v){ qs('#'+id).value=v; }
 function g(id){ return qs('#'+id).value||''; }
-async function saveModal(){
+qs('#btn-modal-cancel').addEventListener('click', ()=>qs('#modal').style.display='none');
+qs('#btn-modal-save').addEventListener('click', async ()=>{
   const nombres=g('m-nombres').toUpperCase(), apellidos=g('m-apellidos').toUpperCase(), dni=g('m-dni'), empresaid=g('m-empresa'), rol=g('m-rol'), proydef=g('m-proydef').toUpperCase(), email=g('m-email').toLowerCase(), proys=g('m-proys').split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
   if(!nombres||!apellidos||!/^\d{8}$/.test(dni)||!email){ alert('Complete Nombres, Apellidos, DNI (8 dígitos) y Email.'); return; }
   if(EDITING_DNI){
@@ -631,25 +655,18 @@ async function saveModal(){
   }
   qs('#modal').style.display='none';
   CACHE.usuarios = await api('/api/usuarios');
-  renderTrabajadoresSelect(); onTrabajadorChange();
-}
+  renderUsuariosTable(); renderTrabajadoresSelect(); onTrabajadorChange();
+});
 
 /* ======= Eventos ======= */
 qs('#btn-login').addEventListener('click', ()=> qs('#login-overlay').style.display='flex');
 qs('#btn-logout').addEventListener('click', ()=>location.reload());
 qs('#btn-local-login').addEventListener('click', localLogin);
-
 qs('#btn-new-worker').addEventListener('click', ()=>openTrabajadorEditor(false));
 qs('#btn-edit-worker').addEventListener('click', ()=>openTrabajadorEditor(true));
-qs('#btn-modal-cancel').addEventListener('click', ()=>qs('#modal').style.display='none');
-qs('#btn-modal-save').addEventListener('click', saveModal);
-
 qs('#sel-trabajador').addEventListener('change', onTrabajadorChange);
 qs('#f-emision').addEventListener('change', ()=>updateTotalsUI());
-document.addEventListener('input', e=>{
-  if(e.target.classList.contains('monto')) updateTotalsUI(true);
-});
-
+document.addEventListener('input', e=>{ if(e.target.classList.contains('monto')) updateTotalsUI(true); });
 qs('#btn-save').addEventListener('click', guardarPlanilla);
 
 qsa('.tab').forEach(t=>t.addEventListener('click', async ()=>{

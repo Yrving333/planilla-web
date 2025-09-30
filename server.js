@@ -7,7 +7,7 @@ import bodyParser from "body-parser";
 import dotenv from "dotenv";
 dotenv.config();
 
-const TOPE_DIA = 45;         // tope de S/45 por día/usuario
+const TOPE_DIA = 45;
 const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
 
 const { Pool } = pg;
@@ -23,6 +23,45 @@ const app = express();
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
+// ---------- schema (idempotente) ----------
+async function ensureSchema(){
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS empresas(
+      id TEXT PRIMARY KEY,
+      razon TEXT,
+      ruc TEXT,
+      direccion TEXT,
+      telefono TEXT,
+      logo TEXT
+    );
+    CREATE TABLE IF NOT EXISTS usuarios(
+      id SERIAL PRIMARY KEY,
+      activo BOOLEAN NOT NULL DEFAULT true,
+      dni TEXT UNIQUE,
+      nombres TEXT,
+      apellidos TEXT,
+      email TEXT UNIQUE,
+      empresaid TEXT REFERENCES empresas(id),
+      rol TEXT,
+      proydef TEXT,
+      proyectos TEXT
+    );
+    CREATE TABLE IF NOT EXISTS historial(
+      id SERIAL PRIMARY KEY,
+      serie TEXT, num TEXT, fecha TEXT,
+      dni TEXT, email TEXT,
+      trabajador TEXT,
+      proyecto TEXT, destino TEXT, motivo TEXT,
+      pc TEXT, monto NUMERIC, total NUMERIC
+    );
+    CREATE TABLE IF NOT EXISTS counters(
+      dni TEXT PRIMARY KEY,
+      seq INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+}
+ensureSchema().catch(console.error);
+
 // ---------- helpers ----------
 function serieFromName(nombres, apellidos) {
   const norm = (t) =>
@@ -31,7 +70,6 @@ function serieFromName(nombres, apellidos) {
   const b = (norm(apellidos).trim().toUpperCase() || "YY").slice(0, 2);
   return `${a}${b}001`;
 }
-
 async function getEmpresaById(id) {
   const { rows } = await pool.query("SELECT * FROM empresas WHERE id=$1", [id]);
   return rows[0] || null;
@@ -47,37 +85,31 @@ app.get("/api/login", async (req, res) => {
     );
     const u = rows[0];
     if (!u || !u.activo) return res.status(400).json({ error: "Usuario no existe o inactivo" });
-    // normaliza array
-    if (typeof u.proyectos === "string") u.proyectos = u.proyectos.split(",").map(s => s.trim()).filter(Boolean);
     res.json(u);
-  } catch (e) { res.status(500).json({ error: "login error" }); }
+  } catch { res.status(500).json({ error: "login error" }); }
 });
 
 // ---------- empresas ----------
 app.get("/api/empresas", async (_req, res) => {
-  try {
-    const { rows } = await pool.query("SELECT * FROM empresas ORDER BY id");
-    res.json(rows);
-  } catch (e) { res.status(500).json({ error: "empresas get" }); }
+  try { const { rows } = await pool.query("SELECT * FROM empresas ORDER BY id"); res.json(rows); }
+  catch { res.status(500).json({ error: "empresas get" }); }
 });
 app.put("/api/empresas", async (req, res) => {
+  const list = req.body || [];
+  const client = await pool.connect();
   try {
-    const list = req.body || [];
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("DELETE FROM empresas");
-      for (const e of list) {
-        await client.query(
-          "INSERT INTO empresas(id, razon, ruc, direccion, telefono, logo) VALUES($1,$2,$3,$4,$5,$6)",
-          [e.id, e.razon, e.ruc, e.direccion, e.telefono, e.logo || ""]
-        );
-      }
-      await client.query("COMMIT");
-      res.json({ ok: true });
-    } catch (e) { await client.query("ROLLBACK"); throw e; }
-    finally { client.release(); }
-  } catch (e) { res.status(500).json({ error: "empresas put" }); }
+    await client.query("BEGIN");
+    await client.query("DELETE FROM empresas");
+    for (const e of list) {
+      await client.query(
+        "INSERT INTO empresas(id, razon, ruc, direccion, telefono, logo) VALUES($1,$2,$3,$4,$5,$6)",
+        [e.id, e.razon, e.ruc, e.direccion, e.telefono, e.logo || ""]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ ok: true });
+  } catch (e) { await client.query("ROLLBACK"); res.status(500).json({ error: "empresas put" }); }
+  finally { client.release(); }
 });
 
 // ---------- usuarios ----------
@@ -88,31 +120,29 @@ app.get("/api/usuarios", async (_req, res) => {
       if (typeof r.proyectos === "string") r.proyectos = r.proyectos.split(",").map(s=>s.trim()).filter(Boolean);
     });
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: "usuarios get" }); }
+  } catch { res.status(500).json({ error: "usuarios get" }); }
 });
 app.put("/api/usuarios", async (req, res) => {
+  const list = req.body || [];
+  const client = await pool.connect();
   try {
-    const list = req.body || [];
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("DELETE FROM usuarios");
-      for (const u of list) {
-        await client.query(
-          `INSERT INTO usuarios(activo,dni,nombres,apellidos,empresaid,rol,proydef,proyectos,email)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [
-            !!u.activo, u.dni, u.nombres, u.apellidos, u.empresaid,
-            u.rol, u.proydef || u.proyDef || "", (u.proyectos || []).join(", "),
-            (u.email || "").toLowerCase()
-          ]
-        );
-      }
-      await client.query("COMMIT");
-      res.json({ ok: true });
-    } catch (e) { await client.query("ROLLBACK"); throw e; }
-    finally { client.release(); }
-  } catch (e) { res.status(500).json({ error: "usuarios put" }); }
+    await client.query("BEGIN");
+    await client.query("DELETE FROM usuarios");
+    for (const u of list) {
+      await client.query(
+        `INSERT INTO usuarios(activo,dni,nombres,apellidos,empresaid,rol,proydef,proyectos,email)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          !!u.activo, u.dni, u.nombres, u.apellidos, u.empresaid,
+          u.rol, u.proydef || "", (u.proyectos || []).join(", "),
+          (u.email || "").toLowerCase()
+        ]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ ok: true });
+  } catch (e) { await client.query("ROLLBACK"); res.status(500).json({ error: "usuarios put" }); }
+  finally { client.release(); }
 });
 
 // crear/editar desde modal
@@ -120,7 +150,6 @@ app.put("/api/usuarios/modal", async (req, res) => {
   try {
     const { edit, from, record } = req.body || {};
     if (edit) {
-      // actualizar por dni 'from'
       await pool.query(
         `UPDATE usuarios SET dni=$1, nombres=$2, apellidos=$3, empresaid=$4, rol=$5, proydef=$6, proyectos=$7, email=$8
          WHERE dni=$9`,
@@ -137,57 +166,62 @@ app.put("/api/usuarios/modal", async (req, res) => {
       );
     }
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: "usuarios modal" }); }
+  } catch { res.status(500).json({ error: "usuarios modal" }); }
+});
+
+// eliminar usuarios seleccionados
+app.delete("/api/usuarios", async (req, res) => {
+  try {
+    const dnis = req.body?.dnis || [];
+    if(!dnis.length) return res.json({ ok:true, deleted:0 });
+    await pool.query("DELETE FROM usuarios WHERE dni = ANY($1)", [dnis]);
+    res.json({ ok:true, deleted:dnis.length });
+  } catch { res.status(500).json({ error: "usuarios delete" }); }
+});
+
+// ---------- counters ----------
+app.get("/api/counters/next", async (req, res) => {
+  try {
+    const dni = req.query.dni;
+    if(!dni) return res.status(400).json({error:"dni requerido"});
+    const { rows } = await pool.query("SELECT seq FROM counters WHERE dni=$1",[dni]);
+    const seq = rows[0]?.seq || 0;
+    const next = String(seq + 1).padStart(5,'0');
+    res.json({ next });
+  } catch { res.status(500).json({ error: "counters next" }); }
 });
 
 // ---------- historial ----------
-app.get("/api/historial", async (req, res) => {
+app.get("/api/historial", async (_req, res) => {
   try {
-    const scope = req.query.scope || "mine"; // all|mine
-    let rows;
-    if (scope === "all") {
-      ({ rows } = await pool.query("SELECT * FROM historial ORDER BY id"));
-    } else {
-      // Por simplicidad devuelve todo; el front ya filtra por sesión si hiciera falta
-      ({ rows } = await pool.query("SELECT * FROM historial ORDER BY id"));
-    }
+    const { rows } = await pool.query("SELECT * FROM historial ORDER BY id");
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: "historial get" }); }
+  } catch { res.status(500).json({ error: "historial get" }); }
 });
-
 app.put("/api/historial", async (req, res) => {
+  const changes = req.body || [];
+  const client = await pool.connect();
   try {
-    const changes = req.body || [];
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const r of changes) {
-        await client.query(
-          `UPDATE historial SET serie=$1,num=$2,fecha=$3,trabajador=$4,proyecto=$5,destino=$6,motivo=$7,pc=$8,monto=$9,total=$10
-           WHERE id=$11`,
-          [r.serie,r.num,r.fecha,r.trabajador,r.proyecto,r.destino,r.motivo,r.pc,r.monto,r.total,r.id]
-        );
-      }
-      await client.query("COMMIT");
-      res.json({ ok: true });
-    } catch (e) { await client.query("ROLLBACK"); throw e; }
-    finally { client.release(); }
-  } catch (e) { res.status(500).json({ error: "historial put" }); }
+    await client.query("BEGIN");
+    for (const r of changes) {
+      await client.query(
+        `UPDATE historial SET serie=$1,num=$2,fecha=$3,trabajador=$4,proyecto=$5,destino=$6,motivo=$7,pc=$8,monto=$9,total=$10
+         WHERE id=$11`,
+        [r.serie,r.num,r.fecha,r.trabajador,r.proyecto,r.destino,r.motivo,r.pc,r.monto,r.total,r.id]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ ok: true });
+  } catch (e) { await client.query("ROLLBACK"); res.status(500).json({ error: "historial put" }); }
+  finally { client.release(); }
 });
-
 app.delete("/api/historial", async (req, res) => {
   try {
     const ids = req.body?.ids || [];
     if(!ids.length) return res.json({ ok:true, deleted:0 });
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("DELETE FROM historial WHERE id = ANY($1)", [ids]);
-      await client.query("COMMIT");
-      res.json({ ok: true, deleted: ids.length });
-    } catch (e) { await client.query("ROLLBACK"); throw e; }
-    finally { client.release(); }
-  } catch (e) { res.status(500).json({ error: "historial delete" }); }
+    await pool.query("DELETE FROM historial WHERE id = ANY($1)", [ids]);
+    res.json({ ok: true, deleted: ids.length });
+  } catch { res.status(500).json({ error: "historial delete" }); }
 });
 
 // acumulado por día/usuario (suma por planilla distinta)
@@ -205,7 +239,7 @@ app.get("/api/historial/acumulado", async (req, res) => {
       [dni, fecha]
     );
     res.json({ acumulado: Number(rows[0]?.s || 0) });
-  } catch (e) { res.status(500).json({ error: "acumulado get" }); }
+  } catch { res.status(500).json({ error: "acumulado get" }); }
 });
 
 // ---------- admin pin ----------
@@ -222,14 +256,10 @@ app.post("/api/planillas", async (req, res) => {
     if (!dni || !fecha || !Array.isArray(items) || items.length===0)
       return res.status(400).json({ error: "Datos incompletos" });
 
-    // usuario + empresa
-    const { rows:ru } = await client.query(
-      "SELECT * FROM usuarios WHERE dni=$1 LIMIT 1", [dni]
-    );
+    const { rows:ru } = await client.query("SELECT * FROM usuarios WHERE dni=$1 LIMIT 1", [dni]);
     const u = ru[0];
     if (!u) return res.status(400).json({ error: "Usuario no existe" });
 
-    // acumulado del día (por planilla distinta)
     const { rows:rac } = await client.query(
       `SELECT COALESCE(SUM(total),0) AS s
        FROM (
@@ -248,27 +278,18 @@ app.post("/api/planillas", async (req, res) => {
       });
     }
 
-    // generar serie y numeración por DNI
     await client.query("BEGIN");
-    await client.query(
-      `CREATE TABLE IF NOT EXISTS counters(
-         dni TEXT PRIMARY KEY,
-         seq INTEGER NOT NULL DEFAULT 0
-       )`
-    );
-    const { rows:rc } = await client.query(
-      `INSERT INTO counters(dni, seq) VALUES($1, 0)
-       ON CONFLICT (dni) DO UPDATE SET seq=counters.seq
-       RETURNING seq`, [dni]
-    );
-    const next = Number(rc[0].seq) + 1;
-    await client.query("UPDATE counters SET seq=$1 WHERE dni=$2", [next, dni]);
+    // asegurar fila en counters
+    await client.query(`INSERT INTO counters(dni,seq) VALUES($1,0)
+                        ON CONFLICT (dni) DO NOTHING`, [dni]);
+    const { rows:rc } = await client.query("SELECT seq FROM counters WHERE dni=$1",[dni]);
+    const next = Number(rc[0]?.seq || 0) + 1;
+    await client.query("UPDATE counters SET seq=$1 WHERE dni=$2",[next,dni]);
 
     const serie = serieFromName(u.nombres, u.apellidos);
     const num = String(next).padStart(5,"0");
-
-    // insertar historial (una fila por item con el total de la planilla)
     const totalPlanilla = totalNuevo;
+
     for (const it of items) {
       await client.query(
         `INSERT INTO historial(serie,num,fecha,dni,email,trabajador,proyecto,destino,motivo,pc,monto,total)
@@ -276,14 +297,13 @@ app.post("/api/planillas", async (req, res) => {
         [
           serie, num, fecha, dni, (email||"").toLowerCase(),
           `${u.nombres} ${u.apellidos}`,
-          it.proyecto || (u.proydef || u.proyDef || ""),
+          it.proyecto || (u.proydef || ""),
           it.destino, it.motivo, it.pc, Number(it.monto||0), totalPlanilla
         ]
       );
     }
     await client.query("COMMIT");
 
-    // devolver empresa (para PDF)
     const emp = await getEmpresaById(u.empresaid);
     res.json({ ok:true, serie, num, total: totalPlanilla, empresa: emp });
   } catch (e) {
