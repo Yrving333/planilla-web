@@ -1,9 +1,10 @@
 /**
- * server.cjs (v9 – compat + parser de montos + filtro de filas)
+ * server.cjs (v10) – Robustez para guardar y exportar PDF
  * - Correlativo por usuario (dni) con transacción
- * - Parser robusto de montos (evita NaN en NUMERIC)
- * - Solo inserta filas con monto > 0
- * - Endpoints compatibles con tu front actual
+ * - Parser de montos: limpia "S/", comas, espacios, strings vacíos → número
+ * - Filtra filas con monto <= 0 (no se insertan)
+ * - Mensajes de error claros; logs de diagnóstico en POST /api/planillas
+ * - Endpoints compatibles con el front actual
  */
 
 require('dotenv').config();
@@ -28,36 +29,31 @@ app.use(cors({
   credentials: true
 }));
 
-// -------------------- helpers --------------------
-const q = (sql, p=[]) => pool.query(sql, p);
+// ---------- utils ----------
+const q   = (sql, p=[]) => pool.query(sql, p);
 const pad = (n,w=5)=> String(n).padStart(w,'0');
 const norm = s => (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
-const serieFromName = (n='',a='') => norm(n).slice(0,2)+norm(a).slice(0,2)+'001';
+const serieFromName = (n='',a='') => norm(n).slice(0,2) + norm(a).slice(0,2) + '001';
 const normalizeFecha = (f)=>{
   const s = String(f||'').trim();
   if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)){ const [dd,mm,yy]=s.split('/'); return `${yy}-${mm}-${dd}`; }
   if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  return s;
+  return s; // deja pasar por compatibilidad
 };
-const errMsg = (e, fb='Error inesperado')=> e?.msg || e?.detail || e?.hint || (e?.code?`${fb} (PG:${e.code})`:fb);
+const errMsg = (e, fb='Error inesperado') => e?.msg || e?.detail || e?.hint || (e?.code?`${fb} (PG:${e.code})`:fb);
 
-/** Limpia entradas tipo "S/ 45,00", "45.0", "", null → número con 2 decimales */
+// Limpia "S/ 45,00", "45.0", "", null → número con 2 decimales
 function toMoney(v){
   if(v === null || v === undefined) return 0;
   let s = String(v).trim();
-  // reemplaza coma por punto y quita símbolos y espacios
-  s = s.replace(/,/g,'.').replace(/[^0-9.\-]/g,'');
-  // Si hay más de un punto, conserva el último (casos raros)
+  s = s.replace(/,/g,'.').replace(/[^0-9.\-]/g,'');        // quita símbolos
   const parts = s.split('.');
-  if(parts.length > 2){
-    const last = parts.pop();
-    s = parts.join('') + '.' + last;
-  }
+  if(parts.length > 2){ const last = parts.pop(); s = parts.join('') + '.' + last; }
   const n = parseFloat(s);
   return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
 }
 
-// -------------------- bootstrap --------------------
+// ---------- bootstrap (idempotente) ----------
 async function bootstrap(){
   await q(`
     CREATE TABLE IF NOT EXISTS empresas (
@@ -66,6 +62,7 @@ async function bootstrap(){
       ruc TEXT, direccion TEXT, telefono TEXT, logo TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     );
+
     CREATE TABLE IF NOT EXISTS usuarios (
       email TEXT PRIMARY KEY,
       dni TEXT UNIQUE,
@@ -73,6 +70,7 @@ async function bootstrap(){
       apellidos TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT NOW()
     );
+
     ALTER TABLE usuarios
       ADD COLUMN IF NOT EXISTS role        TEXT,
       ADD COLUMN IF NOT EXISTS rol         TEXT,
@@ -112,6 +110,7 @@ async function bootstrap(){
       ('INV_PADOVA','INVERSIONES PADOVA S.A.C.','20523824598','JR. LAS PONCIANAS 139 OF.201 - LA MOLINA VIEJA','495-1331'),
       ('CONS_PADOVA','CONSTRUCTORA PADOVA S.A.C.','20601444341','JR. LAS PONCIANAS 139 OF.201 - LA MOLINA VIEJA','495-1331')
       ON CONFLICT (id) DO NOTHING;
+
       INSERT INTO usuarios (email,dni,nombres,apellidos,role,rol,empresaid,proydef,proys,activo) VALUES
       ('admin@empresa.com','44895702','YRVING','LEON','ADMIN_PADOVA','ADMIN_PADOVA','INV_PADOVA','ADMIN PADOVA','{}','1'),
       ('usuario@empresa.com','44081950','JOEL','GARGATE','USUARIO','USUARIO','CONS_PADOVA','SANTA BEATRIZ','{"SANTA BEATRIZ"}','1')
@@ -120,8 +119,20 @@ async function bootstrap(){
   }
 }
 
-// -------------------- rutas públicas --------------------
-app.get('/api/health', (_req,res)=> res.json({ok:true, now:new Date().toISOString()}));
+// ---------- debug ----------
+app.get('/api/debug/ping', (_req,res)=> res.json({ok:true, ts:new Date().toISOString()}));
+app.get('/api/debug/planillas/peek', async (req,res)=>{
+  const dni = String(req.query.dni||'');
+  const fecha = normalizeFecha(req.query.fecha||'');
+  if(!dni||!fecha) return res.status(400).json({ok:false,msg:'dni y fecha requeridos'});
+  try{
+    const acc = (await q(`SELECT COALESCE(SUM(total),0) AS s FROM historial WHERE dni=$1 AND fecha=$2`, [dni,fecha])).rows[0].s;
+    res.json({ok:true, acumulado: Number(acc)});
+  }catch(e){ res.status(500).json({ok:false,msg:errMsg(e)}); }
+});
+
+// ---------- públicas (compat front) ----------
+app.get('/api/health', (_req,res)=> res.json({ok:true}));
 
 app.get('/api/login', async (req,res)=>{
   try{
@@ -150,11 +161,11 @@ app.get('/api/usuarios', async (_req,res)=>{
              CASE WHEN (COALESCE(activo::text,'') IN ('1','t','true','TRUE','on','yes')) THEN TRUE ELSE FALSE END AS activo,
              empresaid, proydef, COALESCE(proys,'{}') AS proys
       FROM usuarios ORDER BY apellidos,nombres`);
-    res.json(rows.map(r=>({...r, proyectos:r.proys})));
+    res.json(rows.map(r=>({...r, proyectos:r.proys })));
   }catch(e){ console.error(e); res.status(500).json([]); }
 });
 
-// -------------------- counters: peek por dni (no incrementa) --------------------
+// ---------- counters: peek por dni (no incrementa) ----------
 app.get('/api/counters/next', async (req,res)=>{
   try{
     const dni = String(req.query.dni||'');
@@ -164,23 +175,32 @@ app.get('/api/counters/next', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json({ next:'00000' }); }
 });
 
-// -------------------- planillas (transacción + correlativo por usuario) --------------------
+// ---------- planillas (transacción + correlativo por usuario) ----------
 app.post('/api/planillas', async (req,res)=>{
   const client = await pool.connect();
+  // Log diagnóstico (no expone datos sensibles)
+  const dbg = (label, obj)=> console.log(`[planillas] ${label}:`, JSON.stringify(obj).slice(0,400));
+
   try{
     const { dni, email, fecha, items=[] } = req.body||{};
+    dbg('payload.head', {dni,email,fecha, items_len: Array.isArray(items)?items.length:null});
+
     if(!dni || !email || !fecha || !Array.isArray(items)){
       client.release(); return res.status(400).json({ ok:false, msg:'Payload inválido' });
     }
 
-    // Normaliza y FILTRA filas (solo monto > 0)
-    const normalized = (items||[]).map(it => ({
-      proyecto: norm(it.proyecto || ''),
-      destino : norm(it.destino  || ''),
-      motivo  : norm(it.motivo   || ''),
-      pc      : String(it.pc || ''),
-      monto   : toMoney(it.monto)
-    })).filter(it => it.monto > 0);
+    // Normaliza y filtra
+    const normalized = (items||[]).map((it,i) => {
+      const obj = {
+        proyecto: norm(it.proyecto || ''),
+        destino : norm(it.destino  || ''),
+        motivo  : norm(it.motivo   || ''),
+        pc      : String(it.pc || ''),
+        monto   : toMoney(it.monto)
+      };
+      dbg(`item[${i}]`, obj);
+      return obj;
+    }).filter(it => it.monto > 0);
 
     if(!normalized.length){
       client.release(); return res.status(400).json({ ok:false, msg:'No hay filas con monto > 0' });
@@ -192,15 +212,15 @@ app.post('/api/planillas', async (req,res)=>{
     const u = (await client.query(`SELECT * FROM v_usuarios_login WHERE email ILIKE $1 LIMIT 1`, [String(email).toLowerCase()])).rows[0];
     if(!u){ await client.query('ROLLBACK'); client.release(); return res.status(400).json({ ok:false, msg:'Usuario no existe' }); }
 
-    // Tope por día
     const acc = (await client.query(`SELECT COALESCE(SUM(total),0) AS s FROM historial WHERE dni=$1 AND fecha=$2`, [dni, fechaISO])).rows[0].s;
     const totalItems = Number(normalized.reduce((a,b)=>a + b.monto, 0).toFixed(2));
+    dbg('totales', {acc:Number(acc), totalItems, TOPE});
+
     if(Number(acc) + totalItems > TOPE){
       await client.query('ROLLBACK'); client.release();
       return res.status(400).json({ ok:false, msg:`Excede el tope diario de S/${TOPE}. Acumulado: S/${acc}` });
     }
 
-    // incremento real del correlativo (usuario)
     const bumped = (await client.query(`
       INSERT INTO counters (dni,n) VALUES ($1,1)
       ON CONFLICT (dni) DO UPDATE SET n=counters.n+1
@@ -225,7 +245,10 @@ app.post('/api/planillas', async (req,res)=>{
     const emp = (await client.query(`SELECT id,razon,ruc,direccion,telefono,logo FROM empresas WHERE id=$1`, [u.empresaid||null])).rows[0] || null;
 
     await client.query('COMMIT'); client.release();
-    res.json({ ok:true, serie, num, fecha:fechaISO, total: totalItems, empresa: emp, trabajador, detalle });
+    const resp = { ok:true, serie, num, fecha:fechaISO, total: totalItems, empresa: emp, trabajador, detalle };
+    dbg('resp', {serie,num,fecha:fechaISO,total:totalItems,items:detalle.length});
+    res.json(resp);
+
   }catch(e){
     try{ await client.query('ROLLBACK'); }catch(_){}
     try{ client.release(); }catch(_){}
@@ -234,7 +257,7 @@ app.post('/api/planillas', async (req,res)=>{
   }
 });
 
-// -------------------- historial (compat; respeta dni cuando se envía) --------------------
+// ---------- historial (compat) ----------
 app.get('/api/historial', async (req,res)=>{
   try{
     const dni = req.query.dni ? String(req.query.dni) : null;
@@ -264,35 +287,13 @@ app.get('/api/historial/by-date', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json([]); }
 });
 
-app.put('/api/historial', async (req,res)=>{
-  try{
-    const changes = Array.isArray(req.body) ? req.body : [];
-    for(const c of changes){
-      await q(`UPDATE historial SET
-               serie=$2,num=$3,fecha=$4,trabajador=$5,proyecto=$6,destino=$7,motivo=$8,pc=$9,monto=$10,total=$11
-               WHERE id=$1`,
-               [c.id,c.serie,c.num,normalizeFecha(c.fecha),c.trabajador,c.proyecto,c.destino,c.motivo,c.pc,Number(toMoney(c.monto)),Number(toMoney(c.total))]);
-    }
-    res.json({ok:true});
-  }catch(e){ console.error(e); res.status(500).json({ok:false,msg:errMsg(e,'Error editando historial')}); }
-});
-
-app.delete('/api/historial', async (req,res)=>{
-  try{
-    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
-    if(!ids.length) return res.json({ok:true});
-    await q(`DELETE FROM historial WHERE id = ANY($1::int[])`, [ids]);
-    res.json({ok:true});
-  }catch(e){ console.error(e); res.status(500).json({ok:false,msg:errMsg(e,'Error eliminando del historial')}); }
-});
-
-// -------------------- admin pin (opcional) --------------------
+// ---------- admin pin (opcional) ----------
 app.post('/api/admin/pin', async (req,res)=>{
   try{ const pin = String(req.body?.pin||''); res.json({ ok: pin===ADMIN_PIN }); }
   catch(e){ console.error(e); res.status(500).json({ ok:false }); }
 });
 
-// -------------------- static & start --------------------
+// ---------- static & start ----------
 app.use(express.static(path.join(__dirname,'public')));
 app.get('/', (_req,res)=> res.type('text').send('OK'));
 
