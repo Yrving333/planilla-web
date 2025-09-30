@@ -1,494 +1,454 @@
 // server.js
-// Planilla de Movilidad - Backend Express + Postgres (Neon)
-// © 2025
+// API Planilla de Movilidad (Node + Express + PostgreSQL/Neon)
+// - Tablas auto-creadas si no existen
+// - Vista de login (normaliza email y castea 'activo' a boolean)
+// - Endpoints: /api/login, /api/empresas, /api/usuarios, /api/counters/next, /api/historial, /api/health
 
-import express from "express";
-import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
-import { Pool } from "pg";
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const { Pool } = require('pg');
+const path = require('path');
 
-// ------------------------- Config -------------------------
-const TOPE_DIA = 45.0;
+const app  = express();
+const PORT = process.env.PORT || 10000;
 
+app.use(cors());
+app.use(express.json({ limit: '10mb' })); // logos en base64
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ---------- Conexión Neon ----------
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // Neon
+  ssl: { rejectUnauthorized: false } // Neon/Render
 });
 
-const app = express();
-app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+async function q(sql, params = []) {
+  const res = await pool.query(sql, params);
+  return res;
+}
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// ---------- Util ----------
+function stripAccents(s = '') {
+  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+}
+function serieFromName(nombres = '', apellidos = '') {
+  const a = stripAccents(String(nombres)).trim().toUpperCase();
+  const b = stripAccents(String(apellidos)).trim().toUpperCase();
+  return (a.slice(0, 2) + b.slice(0, 2) + '001'); // ej. YRLE001
+}
+function pad5(n) {
+  return String(n).padStart(5, '0');
+}
 
-// Sirve frontend (público)
-app.use(express.static(path.join(__dirname, "public")));
-
-// --------------------- Utilidades SQL ---------------------
-async function ensureSchema() {
-  // Empresas
-  await pool.query(`
+// ---------- Bootstrap DB ----------
+async function bootstrap() {
+  // 1) Empresas
+  await q(`
     CREATE TABLE IF NOT EXISTS empresas (
-      id TEXT PRIMARY KEY,
-      razon TEXT,
-      ruc   TEXT,
+      id        TEXT PRIMARY KEY,
+      razon     TEXT NOT NULL DEFAULT '',
+      ruc       TEXT,
       direccion TEXT,
-      telefono TEXT,
-      logo   TEXT
+      telefono  TEXT,
+      logo      TEXT
     );
   `);
 
-  // Usuarios
-  await pool.query(`
+  // 2) Usuarios (activo INT 0/1 para no romper instalaciones previas)
+  await q(`
     CREATE TABLE IF NOT EXISTS usuarios (
-      id SERIAL PRIMARY KEY,
-      activo BOOLEAN NOT NULL DEFAULT TRUE,
-      dni    VARCHAR(8) UNIQUE NOT NULL,
-      nombres   TEXT NOT NULL,
-      apellidos TEXT NOT NULL,
-      email     TEXT UNIQUE NOT NULL,
-      empresaid TEXT NOT NULL REFERENCES empresas(id),
-      rol       TEXT NOT NULL,
-      proydef   TEXT,
-      proys     TEXT,
-      created_at TIMESTAMPTZ DEFAULT now()
+      id         BIGSERIAL PRIMARY KEY,
+      activo     INTEGER NOT NULL DEFAULT 1,
+      dni        TEXT UNIQUE NOT NULL,
+      nombres    TEXT,
+      apellidos  TEXT,
+      email      TEXT UNIQUE,
+      empresaid  TEXT REFERENCES empresas(id) ON DELETE SET NULL,
+      rol        TEXT,
+      proydef    TEXT,
+      proys      TEXT
     );
   `);
 
-  // Contadores por DNI
-  await pool.query(`
+  // 3) Contadores por DNI (para numeración)
+  await q(`
     CREATE TABLE IF NOT EXISTS counters (
-      dni VARCHAR(8) PRIMARY KEY,
-      seq INTEGER NOT NULL DEFAULT 0
+      dni TEXT PRIMARY KEY,
+      n   INTEGER NOT NULL DEFAULT 0
     );
   `);
 
-  // Historial de planillas (un registro por ítem/monto)
-  await pool.query(`
+  // 4) Historial
+  await q(`
     CREATE TABLE IF NOT EXISTS historial (
-      id SERIAL PRIMARY KEY,
-      serie TEXT NOT NULL,
-      num   TEXT NOT NULL,
-      fecha DATE NOT NULL,
-      dni   VARCHAR(8) NOT NULL,
-      email TEXT,
-      trabajador TEXT NOT NULL,
+      id         BIGSERIAL PRIMARY KEY,
+      serie      TEXT,
+      num        TEXT,
+      fecha      DATE,
+      dni        TEXT,
+      email      TEXT,
+      trabajador TEXT,
       proyecto   TEXT,
       destino    TEXT,
       motivo     TEXT,
       pc         TEXT,
-      monto      NUMERIC(12,2) NOT NULL,
-      total      NUMERIC(12,2) NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT now()
+      monto      NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total      NUMERIC(12,2) NOT NULL DEFAULT 0
     );
   `);
 
-  // Semilla mínima (si no existen)
-  const { rows: rEmp } = await pool.query(`SELECT COUNT(*)::int AS c FROM empresas;`);
-  if (rEmp[0].c === 0) {
-    await pool.query(
-      `INSERT INTO empresas(id,razon,ruc,direccion,telefono,logo)
-       VALUES
-       ('INV_PADOVA','INVERSIONES PADOVA S.A.C.','20523824598','JR. LAS PONCIANAS 139 OF.201 - LA MOLINA VIEJA','495-1331',''),
-       ('CONS_PADOVA','CONSTRUCTORA PADOVA S.A.C.','20601444341','JR. LAS PONCIANAS 139 OF.201 - LA MOLINA VIEJA','495-1331','')`
-    );
-  }
+  // 5) Vista de login: email en lower + 'activo' boolean
+  await q(`DROP VIEW IF EXISTS v_usuarios_login;`);
+  await q(`
+    CREATE VIEW v_usuarios_login AS
+    SELECT
+      u.id,
+      lower(u.email) AS email,
+      (u.activo <> 0) AS activo,
+      u.dni,
+      u.nombres,
+      u.apellidos,
+      u.rol,
+      u.empresaid,
+      e.razon,
+      e.ruc,
+      e.direccion,
+      e.telefono,
+      e.logo
+    FROM usuarios u
+    LEFT JOIN empresas e ON e.id = u.empresaid;
+  `);
 
-  const { rows: rUsr } = await pool.query(`SELECT COUNT(*)::int AS c FROM usuarios;`);
-  if (rUsr[0].c === 0) {
-    await pool.query(
-      `INSERT INTO usuarios(activo,dni,nombres,apellidos,email,empresaid,rol,proydef,proys)
-       VALUES
-       (TRUE,'44895702','YRVING','LEON','admin@empresa.com','INV_PADOVA','ADMIN_PADOVA','ADMIN PADOVA','ADMIN PADOVA,LITORAL 900,SANTA BEATRIZ'),
-       (TRUE,'44081950','JOEL','GARGATE','usuario@empresa.com','CONS_PADOVA','USUARIO','SANTA BEATRIZ','SANTA BEATRIZ')`
-    );
+  // 6) Seed mínimo si está vacío (opcional)
+  const { rows: ru } = await q(`SELECT COUNT(*)::INT AS c FROM usuarios;`);
+  if (!ru[0].c) {
+    // Empresas demo
+    await q(`
+      INSERT INTO empresas (id, razon, ruc, direccion, telefono, logo) VALUES
+        ('INV_PADOVA','INVERSIONES PADOVA S.A.C.','20523824598','JR. LAS PONCIANAS 139 OF.201 - LA MOLINA VIEJA','495-1331',''),
+        ('CONS_PADOVA','CONSTRUCTORA PADOVA S.A.C.','20601444341','JR. LAS PONCIANAS 139 OF.201 - LA MOLINA VIEJA','495-1331','')
+      ON CONFLICT (id) DO NOTHING;
+    `);
+
+    // Usuarios demo
+    await q(`
+      INSERT INTO usuarios (activo, dni, nombres, apellidos, email, empresaid, rol, proydef, proys)
+      VALUES
+        (1,'44895702','YRVING','LEON','admin@empresa.com','INV_PADOVA','ADMIN_PADOVA','ADMIN PADOVA','ADMIN PADOVA,LITORAL 900,SANTA BEATRIZ'),
+        (1,'44081950','JOEL','GARGATE','usuario@empresa.com','CONS_PADOVA','USUARIO','SANTA BEATRIZ','SANTA BEATRIZ')
+      ON CONFLICT (email) DO NOTHING;
+    `);
+
+    // Contadores en 0 (próximo: 00001)
+    await q(`
+      INSERT INTO counters (dni,n) VALUES
+        ('44895702',0),('44081950',0)
+      ON CONFLICT (dni) DO UPDATE SET n = EXCLUDED.n;
+    `);
   }
 }
 
-// Serie basada en nombre y apellido (2+2) + "001"
-function serieDesde(nombres = "", apellidos = "") {
-  const norm = (s) =>
-    (s || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toUpperCase();
-  const n = norm(nombres).slice(0, 2);
-  const a = norm(apellidos).slice(0, 2);
-  return `${n}${a}001`;
-}
+// ---------- Endpoints ----------
 
-// Padded 5
-const pad5 = (n) => String(n).padStart(5, "0");
-
-// ------------------------ Endpoints ------------------------
-
-// Salud
-app.get("/api/health", async (_req, res) => {
-  try {
-    await pool.query("SELECT 1");
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e) });
-  }
+// Health
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true });
 });
 
-// -------- Empresas
-app.get("/api/empresas", async (_req, res) => {
+// Login (demo: valida sólo existencia/activo)
+app.post('/api/login', async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      "SELECT id,razon,ruc,direccion,telefono,logo FROM empresas ORDER BY id"
+    const email = String(req.body.email || '').toLowerCase().trim();
+    if (!email) return res.status(400).json({ ok:false, msg:'Email requerido' });
+
+    const { rows } = await q(
+      `SELECT * FROM v_usuarios_login WHERE email = $1 LIMIT 1;`,
+      [email]
     );
-    res.json(rows);
-  } catch (e) {
-    res.status(500).json({ error: "empresas list", details: String(e) });
-  }
-});
-
-// Guarda/actualiza empresas (upsert simple)
-app.post("/api/empresas/save", async (req, res) => {
-  const list = Array.isArray(req.body) ? req.body : [];
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    for (const e of list) {
-      await client.query(
-        `INSERT INTO empresas(id,razon,ruc,direccion,telefono,logo)
-         VALUES($1,$2,$3,$4,$5,$6)
-         ON CONFLICT (id) DO UPDATE SET
-           razon=EXCLUDED.razon,
-           ruc=EXCLUDED.ruc,
-           direccion=EXCLUDED.direccion,
-           telefono=EXCLUDED.telefono,
-           logo=EXCLUDED.logo`,
-        [e.id, e.razon, e.ruc, e.direccion, e.telefono, e.logo || ""]
-      );
+    if (!rows.length || rows[0].activo !== true) {
+      return res.status(401).json({ ok:false, msg:'Usuario no existe o inactivo' });
     }
-    await client.query("COMMIT");
-    res.json({ ok: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: "empresas save", details: String(e) });
-  } finally {
-    client.release();
+
+    res.json({ ok:true, user: rows[0] });
+  } catch (err) {
+    console.error('login error', err);
+    res.status(500).json({ ok:false, msg:'Error login' });
   }
 });
 
-// -------- Usuarios
-// Lista (puede filtrar por email; si ?withEmpresa=1 incluye datos de empresa)
-app.get("/api/usuarios", async (req, res) => {
+// Empresas
+app.get('/api/empresas', async (_req, res) => {
   try {
-    const email = (req.query.email || "").toString().toLowerCase();
-    const withEmpresa = req.query.withEmpresa === "1";
-    let sql = `
-      SELECT u.id,u.activo,u.dni,u.nombres,u.apellidos,u.email,u.empresaid,u.rol,u.proydef,u.proys
-      ${withEmpresa ? ", e.razon AS empresa_razon, e.ruc, e.direccion, e.telefono, e.logo" : ""}
+    const { rows } = await q(`SELECT * FROM empresas ORDER BY id;`);
+    res.json({ ok:true, data: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
+});
+
+app.post('/api/empresas', async (req, res) => {
+  try {
+    const { id, razon, ruc, direccion, telefono, logo } = req.body;
+    if (!id) return res.status(400).json({ ok:false, msg:'id requerido' });
+
+    await q(`
+      INSERT INTO empresas (id, razon, ruc, direccion, telefono, logo)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      ON CONFLICT (id) DO UPDATE SET
+        razon     = EXCLUDED.razon,
+        ruc       = EXCLUDED.ruc,
+        direccion = EXCLUDED.direccion,
+        telefono  = EXCLUDED.telefono,
+        logo      = EXCLUDED.logo
+    `, [id, razon||'', ruc||'', direccion||'', telefono||'', logo||'']);
+
+    res.json({ ok:true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
+});
+
+app.put('/api/empresas/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { razon, ruc, direccion, telefono, logo } = req.body;
+    await q(`
+      UPDATE empresas SET
+        razon=$2, ruc=$3, direccion=$4, telefono=$5, logo=$6
+      WHERE id=$1
+    `, [id, razon||'', ruc||'', direccion||'', telefono||'', logo||'']);
+    res.json({ ok:true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
+});
+
+app.delete('/api/empresas/:id', async (req, res) => {
+  try {
+    await q(`DELETE FROM empresas WHERE id=$1`, [req.params.id]);
+    res.json({ ok:true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
+});
+
+// Usuarios
+app.get('/api/usuarios', async (_req, res) => {
+  try {
+    const { rows } = await q(`
+      SELECT u.*, e.razon AS empresa_razon
       FROM usuarios u
-      ${withEmpresa ? "LEFT JOIN empresas e ON e.id=u.empresaid" : ""}
+      LEFT JOIN empresas e ON e.id = u.empresaid
+      ORDER BY u.email;
+    `);
+    res.json({ ok:true, data: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
+});
+
+app.post('/api/usuarios', async (req, res) => {
+  try {
+    const {
+      activo = 1, dni, nombres='', apellidos='', email,
+      empresaid=null, rol='USUARIO', proydef='', proys=''
+    } = req.body;
+    if (!dni || !email) return res.status(400).json({ ok:false, msg:'dni y email requeridos' });
+
+    await q(`
+      INSERT INTO usuarios (activo, dni, nombres, apellidos, email, empresaid, rol, proydef, proys)
+      VALUES ($1,$2,$3,$4,lower($5),$6,$7,$8,$9)
+      ON CONFLICT (email) DO UPDATE SET
+        activo=$1, dni=$2, nombres=$3, apellidos=$4,
+        empresaid=$6, rol=$7, proydef=$8, proys=$9
+    `, [activo?1:0, dni, nombres, apellidos, email, empresaid, rol, proydef, proys]);
+
+    // crea/asegura contador
+    await q(`
+      INSERT INTO counters (dni, n)
+      VALUES ($1, 0)
+      ON CONFLICT (dni) DO NOTHING;
+    `, [dni]);
+
+    res.json({ ok:true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
+});
+
+// Nota: si el DNI puede cambiar, pásalo en body como oldDni para migrar el contador
+app.put('/api/usuarios/:dni', async (req, res) => {
+  try {
+    const dni = req.params.dni;
+    const {
+      activo = 1, nombres='', apellidos='', email,
+      empresaid=null, rol='USUARIO', proydef='', proys='',
+      newDni // opcional: si cambia el DNI
+    } = req.body;
+
+    // Actualiza usuario
+    await q(`
+      UPDATE usuarios SET
+        activo=$2, nombres=$3, apellidos=$4, email=lower($5),
+        empresaid=$6, rol=$7, proydef=$8, proys=$9,
+        dni = COALESCE($10, dni)
+      WHERE dni=$1
+    `, [dni, activo?1:0, nombres, apellidos, email, empresaid, rol, proydef, proys, newDni||null]);
+
+    // Asegura counter del nuevo DNI
+    const currentDni = newDni || dni;
+    await q(`
+      INSERT INTO counters (dni, n) VALUES ($1, 0)
+      ON CONFLICT (dni) DO NOTHING;
+    `, [currentDni]);
+
+    res.json({ ok:true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
+});
+
+app.delete('/api/usuarios/:dni', async (req, res) => {
+  try {
+    const dni = req.params.dni;
+    await q(`DELETE FROM usuarios WHERE dni=$1`, [dni]);
+    // opcional: borrar el counter
+    // await q(`DELETE FROM counters WHERE dni=$1`, [dni]);
+    res.json({ ok:true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
+});
+
+// NEXT number por DNI (incrementa y devuelve {serie,num})
+app.post('/api/counters/next', async (req, res) => {
+  try {
+    const dni = String(req.body.dni||'').trim();
+    if (!dni) return res.status(400).json({ ok:false, msg:'dni requerido' });
+
+    // Asegura fila counter
+    await q(`
+      INSERT INTO counters (dni,n) VALUES ($1,0)
+      ON CONFLICT (dni) DO NOTHING;
+    `, [dni]);
+
+    // Sube n y devuelve
+    const { rows } = await q(
+      `UPDATE counters SET n = n + 1 WHERE dni=$1 RETURNING n;`, [dni]
+    );
+    const num = pad5(rows[0].n);
+
+    // Lee persona para serie
+    const r2 = await q(`SELECT nombres, apellidos FROM usuarios WHERE dni=$1 LIMIT 1;`, [dni]);
+    const { nombres='', apellidos='' } = r2.rows[0] || {};
+    const serie = serieFromName(nombres, apellidos);
+
+    res.json({ ok:true, serie, num });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
+});
+
+// Guardar planilla (batch)
+app.post('/api/historial', async (req, res) => {
+  // body: { dni, fecha, detalles: [{destino,motivo,proyecto,pc,monto}], total? }
+  try {
+    const dni   = String(req.body.dni||'').trim();
+    const fecha = String(req.body.fecha||'').trim();
+    const detalles = Array.isArray(req.body.detalles) ? req.body.detalles : [];
+    if (!dni || !fecha || !detalles.length) {
+      return res.status(400).json({ ok:false, msg:'dni, fecha y detalles requeridos' });
+    }
+
+    // usuario
+    const ru = await q(`SELECT email, nombres, apellidos FROM usuarios WHERE dni=$1 LIMIT 1;`, [dni]);
+    if (!ru.rows.length) return res.status(400).json({ ok:false, msg:'Usuario no encontrado' });
+    const email = (ru.rows[0].email||'').toLowerCase();
+    const trabajador = `${ru.rows[0].nombres||''} ${ru.rows[0].apellidos||''}`.trim();
+
+    // correlativo
+    const next = await q(`UPDATE counters SET n=n+1 WHERE dni=$1 RETURNING n;`, [dni]);
+    if (!next.rows.length) {
+      // si no existía counter, lo creamos y ponemos 1
+      await q(`INSERT INTO counters (dni,n) VALUES ($1,1) ON CONFLICT (dni) DO UPDATE SET n=1 RETURNING n;`, [dni]);
+    }
+    const { rows: rN } = await q(`SELECT n FROM counters WHERE dni=$1;`, [dni]);
+    const num   = pad5(rN[0].n);
+    const serie = serieFromName(ru.rows[0].nombres, ru.rows[0].apellidos);
+
+    // total
+    const total = (req.body.total != null)
+      ? Number(req.body.total)
+      : detalles.reduce((s,d)=>s + (Number(d.monto)||0), 0);
+
+    // inserta filas
+    const text = `
+      INSERT INTO historial (serie, num, fecha, dni, email, trabajador, proyecto, destino, motivo, pc, monto, total)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
     `;
-    const params = [];
-    if (email) {
-      sql += " WHERE LOWER(u.email)=$1";
-      params.push(email);
-    }
-    sql += " ORDER BY u.apellidos,u.nombres";
-    const { rows } = await pool.query(sql, params);
-    res.json(rows);
-  } catch (e) {
-    res.status(500).json({ error: "usuarios list", details: String(e) });
-  }
-});
-
-// Guarda/actualiza usuarios (upsert por email)
-// Si cambia el DNI, traslada el contador.
-app.post("/api/usuarios/save", async (req, res) => {
-  const list = Array.isArray(req.body) ? req.body : [];
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    for (const u of list) {
-      // Busca usuario existente por email
-      const { rows: ex } = await client.query(
-        "SELECT id,dni FROM usuarios WHERE LOWER(email)=LOWER($1)",
-        [u.email]
-      );
-      if (ex.length) {
-        const prevDni = ex[0].dni;
-        await client.query(
-          `UPDATE usuarios SET
-             activo=$1,dni=$2,nombres=$3,apellidos=$4,empresaid=$5,rol=$6,proydef=$7,proys=$8
-           WHERE id=$9`,
-          [
-            !!u.activo,
-            u.dni,
-            u.nombres,
-            u.apellidos,
-            u.empresaid,
-            u.rol,
-            u.proydef || "",
-            (u.proys || u.proyectos || "").toString(),
-            ex[0].id,
-          ]
-        );
-        if (prevDni !== u.dni) {
-          // Mueve contador
-          const { rows: cPrev } = await client.query(
-            "SELECT seq FROM counters WHERE dni=$1",
-            [prevDni]
-          );
-          const seqPrev = cPrev[0]?.seq || 0;
-          await client.query(
-            "INSERT INTO counters(dni,seq) VALUES($1,$2) ON CONFLICT (dni) DO NOTHING",
-            [u.dni, seqPrev]
-          );
-          await client.query("DELETE FROM counters WHERE dni=$1", [prevDni]);
-        }
-      } else {
-        // Inserta nuevo
-        await client.query(
-          `INSERT INTO usuarios(activo,dni,nombres,apellidos,email,empresaid,rol,proydef,proys)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [
-            !!u.activo,
-            u.dni,
-            u.nombres,
-            u.apellidos,
-            u.email.toLowerCase(),
-            u.empresaid,
-            u.rol,
-            u.proydef || "",
-            (u.proys || u.proyectos || "").toString(),
-          ]
-        );
-        await client.query(
-          "INSERT INTO counters(dni,seq) VALUES($1,0) ON CONFLICT (dni) DO NOTHING",
-          [u.dni]
-        );
-      }
-    }
-
-    await client.query("COMMIT");
-    res.json({ ok: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: "usuarios save", details: String(e) });
-  } finally {
-    client.release();
-  }
-});
-
-// -------- Historial
-// Lista (si no es admin, filtra por email/dni)
-app.get("/api/historial", async (req, res) => {
-  try {
-    const email = (req.query.email || "").toString().toLowerCase();
-    const dni = (req.query.dni || "").toString();
-    const admin = req.query.admin === "1";
-
-    let sql = "SELECT * FROM historial";
-    const params = [];
-    if (!admin) {
-      if (email) {
-        sql += " WHERE LOWER(email)=$1";
-        params.push(email);
-      } else if (dni) {
-        sql += " WHERE dni=$1";
-        params.push(dni);
-      } else {
-        // sin filtros y no admin: nada
-        return res.json([]);
-      }
-    }
-    sql += " ORDER BY id DESC";
-    const { rows } = await pool.query(sql, params);
-    res.json(rows);
-  } catch (e) {
-    res.status(500).json({ error: "historial list", details: String(e) });
-  }
-});
-
-// Edita filas de historial (admin)
-app.put("/api/historial", async (req, res) => {
-  const rows = Array.isArray(req.body) ? req.body : [];
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    for (const r of rows) {
-      await client.query(
-        `UPDATE historial SET
-           serie=$1, num=$2, fecha=$3, trabajador=$4, proyecto=$5,
-           destino=$6, motivo=$7, pc=$8, monto=$9, total=$10
-         WHERE id=$11`,
-        [
-          r.serie,
-          r.num,
-          r.fecha,
-          r.trabajador,
-          r.proyecto,
-          r.destino,
-          r.motivo,
-          r.pc,
-          Number(r.monto) || 0,
-          Number(r.total) || 0,
-          r.id,
-        ]
-      );
-    }
-    await client.query("COMMIT");
-    res.json({ ok: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: "historial edit", details: String(e) });
-  } finally {
-    client.release();
-  }
-});
-
-// Elimina filas por IDs (admin)
-app.delete("/api/historial", async (req, res) => {
-  const ids = (req.query.ids || "")
-    .toString()
-    .split(",")
-    .map((s) => parseInt(s.trim(), 10))
-    .filter(Boolean);
-  if (ids.length === 0) return res.json({ ok: true });
-
-  try {
-    await pool.query(`DELETE FROM historial WHERE id = ANY($1::int[])`, [ids]);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: "historial delete", details: String(e) });
-  }
-});
-
-// -------- Correlativo por DNI (si no hay fila, la crea)
-app.get("/api/counters/next", async (req, res) => {
-  try {
-    const dni = (req.query.dni || "").toString();
-    if (!dni) return res.status(400).json({ error: "dni requerido" });
-
-    await pool.query(
-      "INSERT INTO counters(dni,seq) VALUES($1,0) ON CONFLICT (dni) DO NOTHING",
-      [dni]
-    );
-    const { rows } = await pool.query(
-      "SELECT seq FROM counters WHERE dni=$1",
-      [dni]
-    );
-    const next = pad5((rows[0]?.seq || 0) + 1);
-    res.json({ next });
-  } catch (e) {
-    console.error("COUNTERS NEXT", e);
-    res.status(500).json({ error: "counters next", details: String(e) });
-  }
-});
-
-// -------- Guardar planilla (transacción + tope diario)
-app.post("/api/planillas", async (req, res) => {
-  const { dni, email, nombres, apellidos, fecha, detalles = [] } = req.body || {};
-  if (!dni || !fecha || !Array.isArray(detalles) || detalles.length === 0) {
-    return res.status(400).json({ error: "datos incompletos" });
-  }
-
-  const totalPlanilla = detalles.reduce(
-    (s, d) => s + (Number(d.monto) || 0),
-    0
-  );
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    // Suma del día actual para ese DNI (evitando duplicados por serie-num)
-    const { rows: rAcum } = await client.query(
-      `SELECT COALESCE(SUM(DISTINCT total),0) AS acum
-       FROM historial
-       WHERE dni=$1 AND fecha=$2`,
-      [dni, fecha]
-    );
-    const acumulado = Number(rAcum[0]?.acum || 0);
-
-    if (acumulado + totalPlanilla > TOPE_DIA) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({
-        error: "tope_superado",
-        acumulado,
-        disponible: Math.max(0, TOPE_DIA - acumulado),
-        tope: TOPE_DIA,
-      });
-    }
-
-    // Asegura fila en counters y calcula próximo número
-    await client.query(
-      `INSERT INTO counters(dni,seq) VALUES($1,0)
-       ON CONFLICT (dni) DO NOTHING`,
-      [dni]
-    );
-    const { rows: rc } = await client.query(
-      "SELECT seq FROM counters WHERE dni=$1",
-      [dni]
-    );
-    const next = (Number(rc[0]?.seq || 0) + 1);
-    await client.query("UPDATE counters SET seq=$1 WHERE dni=$2", [next, dni]);
-
-    const serie = serieDesde(nombres, apellidos);
-    const num = pad5(next);
-    const trabajador = `${(nombres || "").toUpperCase()} ${(apellidos || "")
-      .toUpperCase()
-      .trim()}`;
-
     for (const d of detalles) {
-      if (!d || Number(d.monto) <= 0) continue;
-      await client.query(
-        `INSERT INTO historial
-         (serie,num,fecha,dni,email,trabajador,proyecto,destino,motivo,pc,monto,total)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-        [
-          serie,
-          num,
-          fecha,
-          dni,
-          (email || "").toLowerCase(),
-          trabajador,
-          (d.proyecto || "").toUpperCase(),
-          (d.destino || "").toUpperCase(),
-          (d.motivo || "").toUpperCase(),
-          (d.pc || "").toString(),
-          Number(d.monto) || 0,
-          totalPlanilla,
-        ]
-      );
+      await q(text, [
+        serie, num, fecha, dni, email, trabajador,
+        (d.proyecto||'').toUpperCase(),
+        (d.destino||'').toUpperCase(),
+        (d.motivo||'').toUpperCase(),
+        String(d.pc||''),
+        Number(d.monto)||0,
+        Number(total)||0
+      ]);
     }
 
-    await client.query("COMMIT");
-    res.json({ ok: true, serie, num, total: totalPlanilla });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error("PLANILLAS SAVE", e);
-    res.status(500).json({ error: "planillas save", details: String(e) });
-  } finally {
-    client.release();
+    res.json({ ok:true, serie, num, total });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
   }
 });
 
-// ------------------ Catch-all frontend --------------------
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+// Listado historial
+// - ?email= filtra por usuario
+// - ?dni=   filtra por DNI
+// - ?all=1  trae todo
+app.get('/api/historial', async (req, res) => {
+  try {
+    const { email, dni, all } = req.query;
+    let rows;
+    if (all === '1') {
+      ({ rows } = await q(`SELECT * FROM historial ORDER BY id DESC LIMIT 1000;`));
+    } else if (dni) {
+      ({ rows } = await q(`SELECT * FROM historial WHERE dni=$1 ORDER BY id DESC LIMIT 1000;`, [dni]));
+    } else if (email) {
+      ({ rows } = await q(`SELECT * FROM historial WHERE lower(email)=lower($1) ORDER BY id DESC LIMIT 1000;`, [email]));
+    } else {
+      // por seguridad, vacío si no hay filtro
+      rows = [];
+    }
+    res.json({ ok:true, data: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok:false });
+  }
 });
 
-// ------------------------- Arranque ------------------------
-const PORT = process.env.PORT || 10000;
-
-(async () => {
-  try {
-    await ensureSchema(); // <-- IMPORTANTE: esperar schema
+// ---------- Start ----------
+bootstrap()
+  .then(() => {
     app.listen(PORT, () => {
       console.log(`API corriendo en http://localhost:${PORT}`);
     });
-  } catch (err) {
-    console.error("Fallo al crear schema", err);
+  })
+  .catch(err => {
+    console.error('Fallo bootstrap DB:', err);
     process.exit(1);
-  }
-})();
+  });
