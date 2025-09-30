@@ -1,357 +1,450 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Planilla de Movilidad</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root{--fg:#0f172a;--muted:#667085;--primary:#2563eb;--bg:#f8fafc;--card:#fff;--border:#e5e7eb}
-  *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
-  .container{max-width:1100px;margin:24px auto;padding:0 16px}
-  header{display:flex;align-items:center;gap:14px;margin-bottom:16px}
-  header .who{font-size:12px;color:var(--muted)} header .who b{color:var(--fg)}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
-  h2{margin:0 0 6px 0;font-size:18px}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .muted{color:var(--muted)}
-  input,select,button{height:40px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font:inherit}
-  button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
-  .row{display:flex;gap:10px;align-items:center}
-  .logo{height:36px;object-fit:contain}
-  nav{display:flex;gap:16px;margin:12px 0 16px 0}
-  nav a{color:var(--muted);text-decoration:none;padding:8px 0;border-bottom:2px solid transparent}
-  nav a.active{color:var(--primary);border-color:var(--primary)}
-  .hide{display:none}
-  table{width:100%;border-collapse:collapse}
-  th,td{border-bottom:1px solid var(--border);padding:8px;text-align:left}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Planilla de Movilidad</title>
+  <link rel="icon" href="/favicon.ico">
+  <style>
+    :root{
+      --bg:#f6f8fb;
+      --card:#ffffff;
+      --txt:#1b2430;
+      --muted:#6b7280;
+      --line:#e5e7eb;
+      --brand:#2563eb;
+      --brand-600:#1d4ed8;
+      --ok:#16a34a;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;background:var(--bg);color:var(--txt);
+      font:15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+    }
+    a{color:var(--brand)}
+    .container{max-width:1120px;margin:0 auto;padding:24px}
+    .topbar{
+      display:flex;align-items:center;gap:16px;justify-content:space-between;margin-bottom:12px
+    }
+    .brand-row{display:flex;align-items:center;gap:12px}
+    .brand-row img{height:28px}
+    .connected{
+      font-size:12px;color:var(--muted);opacity:.8;
+    }
+
+    /* Nav */
+    .nav{
+      display:flex;gap:18px;align-items:center;margin:12px 0 18px 0
+    }
+    .nav a{color:var(--brand);text-decoration:none;font-weight:600}
+    .nav a.active{color:var(--txt)}
+
+    /* Company header */
+    .company{
+      background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px
+    }
+    .company .grid{
+      display:grid;grid-template-columns:72px 1fr;gap:14px;align-items:center
+    }
+    .company .logo{
+      width:72px;height:72px;border-radius:10px;border:1px solid var(--line);
+      display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden
+    }
+    .company .logo img{max-width:100%;max-height:100%}
+    .company h3{margin:0 0 6px 0;font-size:18px;letter-spacing:.2px}
+    .company .sub{color:var(--muted);font-size:13px}
+
+    /* Card */
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+    h1.title{margin:6px 0 12px 0;font-size:22px}
+    .subtitle{margin:0 0 16px 0;color:var(--brand);font-weight:700}
+
+    hr.sep{border:none;border-top:1px dashed var(--line);margin:14px 0}
+
+    label{font-size:12px;color:var(--muted)}
+    input,select,button{
+      font:inherit
+    }
+    input,select{
+      width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff
+    }
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .row3{display:grid;grid-template-columns:1.2fr 1.2fr .7fr .7fr;gap:12px}
+    .row-inline{display:flex;gap:10px;align-items:center}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;background:#eef2ff;color:#3843d0;border-radius:999px;padding:6px 10px;font-size:12px
+    }
+
+    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    td{padding:0 8px}
+    td:first-child{width:28px;text-align:center;color:var(--muted)}
+
+    .actions{display:flex;justify-content:flex-end;margin-top:18px}
+    .btn{
+      background:var(--brand);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-weight:600;cursor:pointer
+    }
+    .btn:hover{background:var(--brand-600)}
+    .btn-outline{
+      background:#fff;color:var(--brand);border:1px solid var(--brand);margin-right:10px
+    }
+
+    /* Legal */
+    .legal{
+      margin-top:14px;color:var(--muted);font-size:12px;border-top:1px dashed var(--line);padding-top:12px
+    }
+
+    /* Login modal */
+    .modal-back{position:fixed;inset:0;background:#0f172acc;display:none;align-items:center;justify-content:center;z-index:20}
+    .modal{width:520px;max-width:calc(100% - 32px);background:#fff;border-radius:16px;padding:22px;border:1px solid var(--line);box-shadow:0 25px 80px rgba(15,23,42,.22)}
+    .modal h2{margin:0 0 12px 0}
+    .modal .help{color:var(--muted);font-size:13px;margin-top:8px}
+    .modal .actions{justify-content:flex-end}
+    .hide{display:none !important}
+
+    /* Chips + small UI details */
+    .chip{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#eef2ff;color:#3843d0;font-weight:600;font-size:12px}
+    .muted{color:var(--muted)}
+    .green{color:var(--ok);font-weight:700}
+  </style>
 </head>
 <body>
-<div class="container">
+  <div class="container">
 
-  <header>
-    <img id="empLogo" class="logo" src="" alt="">
-    <div>
-      <div class="who">Conectado: <b id="whoName">—</b> — <span id="whoMail">—</span> — Rol: <span id="whoRol">—</span></div>
-      <div class="muted" id="empHeader">— • R.U.C. —</div>
-    </div>
-  </header>
-
-  <nav>
-    <a href="#" id="tabNew" class="active">Nueva Planilla</a>
-    <a href="#" id="tabHist">Historial</a>
-    <a href="#" id="tabAdmin" class="">Ajustes (Admin)</a>
-  </nav>
-
-  <!-- NUEVA PLANILLA -->
-  <section id="secNew" class="card">
-    <h2>PLANILLA DE MOVILIDAD</h2>
-    <div class="muted">PROYECTO PRINCIPAL: <b id="projectTitle">—</b></div>
-    <div class="grid2" style="margin-top:10px">
-      <div>
-        <label class="muted">Fecha de Emisión</label>
-        <input id="fechEmi" type="date">
-      </div>
-      <div>
-        <label class="muted">Trabajador Seleccionado</label>
-        <select id="selTrab"></select>
-      </div>
-    </div>
-
-    <div style="margin:16px 0 8px 0" class="muted">
-      Serie: <b id="serieLbl">—</b> · DNI: <b id="dniLbl">—</b>
-    </div>
-
-    <div id="rows"></div>
-
-    <div class="row" style="justify-content:space-between;margin-top:12px">
-      <div class="muted">Tope por día: S/ 45.00 · Acumulado día: <span id="acumDia">S/ 0.00</span></div>
-      <button class="primary" id="btnSend">Finalizar, Guardar y Exportar a PDF</button>
-    </div>
-  </section>
-
-  <!-- HISTORIAL (solo lista simple) -->
-  <section id="secHist" class="card hide">
-    <h2>Historial</h2>
-    <div id="histList" class="muted">—</div>
-  </section>
-
-  <!-- AJUSTES ADMIN -->
-  <section id="secAdmin" class="card hide">
-    <h2>Ajustes (Admin)</h2>
-
-    <h3>Empresas</h3>
-    <div id="empTable"></div>
-    <div class="row" style="margin-top:8px"><button id="saveEmp" class="primary">Guardar empresas</button></div>
-
-    <h3 style="margin-top:18px">Usuarios</h3>
-    <div id="usrTable"></div>
-    <div class="row" style="margin-top:8px"><button id="saveUsr" class="primary">Guardar usuarios</button></div>
-  </section>
-
-</div>
-
-<script>
-  // ------ Helpers ------
-  const API = location.origin;
-  function fmt(n){return "S/ " + (Number(n||0)).toFixed(2)}
-  function serieFrom(n,a){return (n.slice(0,2)+(a||"").slice(0,2)).toUpperCase()+"001"}
-
-  // ------ Auth (simple modal inline) ------
-  let token = localStorage.getItem("token") || "";
-  async function loginFlow(){
-    if (token) { try { await loadMe(); return } catch{} }
-    const email = prompt("Email demo:\nadmin@empresa.com o usuario@empresa.com") || "";
-    const pass  = prompt("Clave demo:\nadmin123 o usuario123") || "";
-    const r = await fetch(API+"/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password:pass})});
-    const j = await r.json();
-    if(!r.ok){ alert(j.error||"Login fallo"); return loginFlow() }
-    token = j.token; localStorage.setItem("token", token);
-    me = j.me;
-    applyMe(me);
-    await initAfterAuth();
-  }
-
-  // ------ Estado global ------
-  let me = null;
-  let empresas = [];
-  let usuarios = [];
-
-  async function loadMe(){
-    const r = await fetch(API+"/api/me",{headers:{Authorization:"Bearer "+token}});
-    if(!r.ok) throw new Error("Auth");
-    me = await r.json();
-    applyMe(me);
-  }
-
-  function applyMe(m){
-    // cabecera
-    document.getElementById("whoName").textContent = `${m.nombres} ${m.apellidos}`;
-    document.getElementById("whoMail").textContent = m.email;
-    document.getElementById("whoRol").textContent  = m.rol;
-    document.getElementById("projectTitle").textContent = m.proyDef||"—";
-
-    const e = m.empresa || {};
-    const head = `${e.razon||"—"} • R.U.C. ${e.ruc||"—"} • ${e.direccion||""}`;
-    document.getElementById("empHeader").textContent = head;
-    const logo = document.getElementById("empLogo");
-    if(e.logo){ logo.src = e.logo; logo.classList.remove("hide"); } else { logo.src=""; logo.classList.add("hide"); }
-
-    document.getElementById("serieLbl").textContent = m.serieBase || serieFrom(m.nombres, m.apellidos);
-    document.getElementById("dniLbl").textContent   = m.dni || "—";
-  }
-
-  // ------ Carga inicial después de auth ------
-  async function initAfterAuth(){
-    // empresas y usuarios (para admin y selector trabajador)
-    const [re, ru] = await Promise.all([
-      fetch(API+"/api/empresas",{headers:{Authorization:"Bearer "+token}}),
-      fetch(API+"/api/usuarios",{headers:{Authorization:"Bearer "+token}})
-    ]);
-    empresas = await re.json();
-    usuarios = await ru.json();
-
-    renderSelectTrab();
-    renderRows();
-    renderAdmin();
-
-    // pestañas
-    const tabNew = document.getElementById("tabNew");
-    const tabHist= document.getElementById("tabHist");
-    const tabAdm = document.getElementById("tabAdmin");
-    tabAdm.style.display = (me.rol==="ADMIN_PADOVA") ? "inline-block":"none";
-
-    tabNew.onclick = (e)=>{e.preventDefault();show("New")};
-    tabHist.onclick= (e)=>{e.preventDefault();show("Hist")};
-    tabAdm.onclick = (e)=>{e.preventDefault();show("Admin")};
-
-    // eventos
-    document.getElementById("selTrab").onchange = onChangeTrab;
-    document.getElementById("btnSend").onclick  = sendPlanilla;
-    document.getElementById("saveEmp").onclick  = saveEmpresas;
-    document.getElementById("saveUsr").onclick  = saveUsuarios;
-  }
-
-  function show(which){
-    for(const id of ["New","Hist","Admin"]){
-      document.getElementById("sec"+id).classList.toggle("hide", id!==which);
-      document.getElementById("tab"+id).classList.toggle("active", id===which);
-    }
-  }
-
-  function renderSelectTrab(){
-    const sel = document.getElementById("selTrab");
-    sel.innerHTML = usuarios.map(u=>{
-      return `<option value="${u.id}" ${u.id===me.id?"selected":""}>${u.nombres} ${u.apellidos}</option>`;
-    }).join("");
-    // No agregamos íconos de crear/editar aquí (requerimiento)
-  }
-
-  function renderRows(){
-    const box = document.getElementById("rows");
-    const pcs = ["94303","95301","95303","234120502","234120503"]
-      .map(p=>`<option value="${p}">${p}</option>`).join("");
-    let html = "";
-    for(let i=0;i<5;i++){
-      html += `
-      <div class="grid2" style="margin-top:8px">
-        <input placeholder="DESTINO">
-        <div class="grid2">
-          <input placeholder="MOTIVO">
-          <select>${pcs}</select>
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="brand-row">
+        <img src="/logo.png" alt="logo" onerror="this.style.display='none'">
+        <div class="nav">
+          <a id="tabNueva" class="active" href="#">Nueva Planilla</a>
+          <a id="tabHist" href="#" onclick="alert('Historial llegará en el siguiente sprint')">Historial</a>
+          <a id="tabAdmin" href="#" onclick="document.getElementById('ajustesMsg').classList.remove('hide')">Ajustes (Admin)</a>
         </div>
-      </div>`;
-    }
-    box.innerHTML = html;
-  }
+      </div>
+      <div class="row-inline">
+        <button id="btnLogin" class="btn btn-outline">Iniciar sesión</button>
+        <button id="btnLogout" class="btn hide">Cerrar sesión</button>
+      </div>
+    </div>
+    <div id="connected" class="connected">No autenticado</div>
 
-  async function onChangeTrab(){
-    const id = Number(this.value);
-    const u = usuarios.find(x=>x.id===id);
-    if(!u) return;
-    // recalcular cabecera
-    me = {
-      ...me,
-      id: u.id, email: u.email, rol: u.rol, dni: u.dni,
-      nombres: u.nombres, apellidos:u.apellidos,
-      empresaId: u.empresaid, proyDef: u.proydef||"",
-      serieBase: serieFrom(u.nombres, u.apellidos),
-      empresa: empresas.find(e=>e.id===u.empresaid)||me.empresa
+    <!-- Company header -->
+    <div class="company">
+      <div class="grid">
+        <div class="logo"><img id="empLogo" alt=""></div>
+        <div>
+          <h3 id="empRazon">—</h3>
+          <div class="sub">
+            <span>R.U.C. <span id="empRuc">—</span></span>
+            <span> • </span>
+            <span id="empDir">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main card -->
+    <div class="card" id="cardPlanilla">
+      <h1 class="title">PLANILLA DE MOVILIDAD</h1>
+      <div id="projPrincipal" class="subtitle">PROYECTO PRINCIPAL: —</div>
+
+      <div class="row">
+        <div>
+          <label>Fecha de Emisión</label>
+          <div class="row-inline">
+            <input id="inpFecha" type="date">
+          </div>
+        </div>
+        <div>
+          <label>Trabajador Seleccionado</label>
+          <div class="row-inline" style="gap:8px">
+            <select id="selTrab"></select>
+            <!-- Íconos deshabilitados (solo visual, no funcional) -->
+            <span id="iconsABM" class="muted hide">✚ ✎</span>
+          </div>
+        </div>
+      </div>
+
+      <hr class="sep">
+
+      <div class="row-inline" style="justify-content:space-between;margin-bottom:8px">
+        <div class="row-inline" style="gap:10px">
+          <span>Serie: <span id="serie" class="chip">—</span></span>
+          <span>·</span>
+          <span>DNI: <strong id="dni">—</strong></span>
+        </div>
+        <div class="row-inline muted">
+          <span>Tope por día:</span>&nbsp;<span id="tope" class="green">S/ 45.00</span>
+          <span style="margin:0 8px">·</span>
+          <span>Acumulado día:</span>&nbsp;<span id="acum" class="">S/ 0.00</span>
+          <span style="margin:0 8px">·</span>
+          <span>Disponible:</span>&nbsp;<span id="disp" class="">S/ 45.00</span>
+        </div>
+      </div>
+
+      <table>
+        <tbody id="tbody">
+          <!-- 5 filas “plantilla” -->
+        </tbody>
+      </table>
+
+      <div class="actions">
+        <button id="btnExport" class="btn">Finalizar, Guardar y Exportar a PDF</button>
+      </div>
+
+      <div class="legal">
+        <strong>Base Legal:</strong> Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del artículo 21° del Reglamento de la Ley del Impuesto a la Renta.  
+        Nota: La falta de consignación de la fecha en que se incurrió en el gasto, nombres y apellidos de cada trabajador, número de DNI, motivo y destino del desplazamiento y monto gastado, respecto a cada desplazamiento, sólo inhabilita la planilla para la sustentación del gasto que corresponda al desplazamiento. (*) Numeración de la planilla.
+      </div>
+    </div>
+
+    <p id="ajustesMsg" class="muted hide">La edición avanzada de “Ajustes (Admin)” queda como módulo aparte. Por ahora, los usuarios no-admin solo ven su propio perfil en esta vista.</p>
+  </div>
+
+  <!-- Login modal -->
+  <div id="loginBack" class="modal-back">
+    <div class="modal">
+      <h2>Iniciar sesión</h2>
+      <div style="display:grid;gap:10px">
+        <div>
+          <label>Email</label>
+          <input id="loginEmail" placeholder="admin@empresa.com" />
+        </div>
+        <div>
+          <label>Clave</label>
+          <input id="loginPass" type="password" placeholder="••••••••" />
+        </div>
+      </div>
+      <div class="help">
+        Modo DEMO: se valida contra la tabla <strong>Usuarios</strong>.  
+        Demo: <code>admin@empresa.com / admin123</code> · <code>usuario@empresa.com / usuario123</code>
+      </div>
+      <div class="actions">
+        <button id="btnDemo" class="btn btn-outline">Restablecer demo</button>
+        <button id="btnDoLogin" class="btn">Entrar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- helpers -------------------------------------------------------------
+    const $ = sel => document.querySelector(sel);
+    const fmt = n => (Number(n||0)).toLocaleString('es-PE',{style:'currency',currency:'PEN',minimumFractionDigits:2});
+    const serieFrom = (nom,ape) => (nom.slice(0,2)+ape.slice(0,2)).toUpperCase()+'001';
+
+    const state = {
+      token: localStorage.getItem('token')||'',
+      me: null,
+      empresas: [],
+      usuarios: [],
+      pcs: []
     };
-    applyMe(me);
-  }
 
-  // ------ Guardar planilla ------
-  async function sendPlanilla(){
-    // leer 5 filas (simple)
-    const filas = Array.from(document.querySelectorAll("#rows .grid2"));
-    const detalles = filas.map((row,idx)=>{
-      const [dest,div] = row.children;
-      const [mot,pc] = div.children;
-      return {
-        destino: dest.value.trim(),
-        motivo: mot.value.trim(),
-        proyecto: me.proyDef || "",
-        pc: pc.value,
-        monto: Number(0) // la UI simple no incluye montos en este layout
+    const authFetch = (url, opt={}) => {
+      opt.headers = Object.assign({}, opt.headers||{}, {
+        'Content-Type':'application/json',
+        'Authorization': state.token ? 'Bearer '+state.token : ''
+      });
+      return fetch(url,opt).then(r=>{
+        if(r.status===401){ doLogout(); throw new Error('401'); }
+        return r.json();
+      });
+    };
+
+    // --- UI: filas de detalle ------------------------------------------------
+    function buildRows(){
+      const tbody = $('#tbody');
+      tbody.innerHTML='';
+      for(let i=0;i<5;i++){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${i+1}</td>
+          <td><input class="inp-dest" placeholder="DESTINO"></td>
+          <td><input class="inp-mot" placeholder="MOTIVO"></td>
+          <td><select class="sel-proy"></select></td>
+          <td><select class="sel-pc"></select></td>
+          <td><input class="inp-monto" type="number" step="0.01" min="0" value="0"></td>`;
+        tbody.appendChild(tr);
       }
-    });
-
-    const fecha = document.getElementById("fechEmi").value || new Date().toISOString().slice(0,10);
-
-    const r = await fetch(API+"/api/planillas",{
-      method:"POST",
-      headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
-      body: JSON.stringify({ dni: me.dni, fecha, detalles })
-    });
-    const j = await r.json();
-    if(!r.ok){ alert(j.error||"Error"); return; }
-    alert(`Guardado: ${j.serie}-${j.num} · Total ${fmt(j.total)}`);
-  }
-
-  // ------ Admin ------
-  function renderAdmin(){
-    // Empresas
-    const empTbl = `
-      <table>
-        <thead><tr><th>ID</th><th>Razón</th><th>RUC</th><th>Dirección</th><th>Teléfono</th><th>Logo (URL)</th></tr></thead>
-        <tbody>
-          ${empresas.map(e=>`
-            <tr>
-              <td><input value="${e.id}" data-t="emp" data-id="${e.id}" data-f="id" disabled></td>
-              <td><input value="${e.razon||""}" data-t="emp" data-id="${e.id}" data-f="razon"></td>
-              <td><input value="${e.ruc||""}" data-t="emp" data-id="${e.id}" data-f="ruc"></td>
-              <td><input value="${e.direccion||""}" data-t="emp" data-id="${e.id}" data-f="direccion"></td>
-              <td><input value="${e.telefono||""}" data-t="emp" data-id="${e.id}" data-f="telefono"></td>
-              <td><input value="${e.logo||""}" data-t="emp" data-id="${e.id}" data-f="logo"></td>
-            </tr>`).join("")}
-        </tbody>
-      </table>`;
-    document.getElementById("empTable").innerHTML = empTbl;
-
-    // Usuarios (ahora SÍ guardará dni, empresaId y proyDef)
-    const empOpts = empresas.map(e=>`<option value="${e.id}">${e.id}</option>`).join("");
-    const usrTbl = `
-      <table>
-        <thead><tr>
-          <th>Activo</th><th>DNI</th><th>Nombres</th><th>Apellidos</th>
-          <th>Email</th><th>Empresa</th><th>Rol</th><th>Proy. Defecto</th><th>Proyectos (coma)</th>
-        </tr></thead>
-        <tbody>
-          ${usuarios.map(u=>`
-          <tr>
-            <td><input type="checkbox" ${u.activo===1?"checked":""} data-t="usr" data-id="${u.id}" data-f="activo"></td>
-            <td><input value="${u.dni||""}" data-t="usr" data-id="${u.id}" data-f="dni"></td>
-            <td><input value="${u.nombres||""}" data-t="usr" data-id="${u.id}" data-f="nombres"></td>
-            <td><input value="${u.apellidos||""}" data-t="usr" data-id="${u.id}" data-f="apellidos"></td>
-            <td><input value="${u.email||""}" data-t="usr" data-id="${u.id}" data-f="email"></td>
-            <td>
-              <select data-t="usr" data-id="${u.id}" data-f="empresaId">
-                ${empOpts.replace(`value="${u.empresaid}"`,`value="${u.empresaid}" selected`)}
-              </select>
-            </td>
-            <td>
-              <select data-t="usr" data-id="${u.id}" data-f="rol">
-                <option value="USUARIO" ${u.rol==="USUARIO"?"selected":""}>USUARIO</option>
-                <option value="ADMIN_PADOVA" ${u.rol==="ADMIN_PADOVA"?"selected":""}>ADMIN_PADOVA</option>
-              </select>
-            </td>
-            <td><input value="${u.proydef||""}" data-t="usr" data-id="${u.id}" data-f="proyDef"></td>
-            <td><input value="${u.proyectos||""}" data-t="usr" data-id="${u.id}" data-f="proyectos"></td>
-          </tr>`).join("")}
-        </tbody>
-      </table>`;
-    document.getElementById("usrTable").innerHTML = usrTbl;
-  }
-
-  function collect(tableSelector){
-    const inputs = Array.from(document.querySelectorAll(`${tableSelector} [data-t]`));
-    const map = new Map();
-    for(const el of inputs){
-      const t = el.dataset.t, id = el.dataset.id, f = el.dataset.f;
-      const val = el.type==="checkbox" ? (el.checked?1:0) : el.value;
-      const key = `${t}:${id}`;
-      if(!map.has(key)) map.set(key,{ id:Number(id) });
-      map.get(key)[f] = val;
+      // proyectos: del usuario (proyectos CSV) o su proyDef
+      fillProjectsFor(state.me);
+      // pcs:
+      document.querySelectorAll('.sel-pc').forEach(s=>{
+        s.innerHTML = state.pcs.map(p=>`<option>${p}</option>`).join('');
+      });
     }
-    return Array.from(map.values());
-  }
 
-  async function saveEmpresas(){
-    const rows = collect("#empTable");
-    const r = await fetch(API+"/api/empresas",{
-      method:"PUT",
-      headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
-      body: JSON.stringify(rows)
-    });
-    const j = await r.json();
-    if(!r.ok){ alert(j.error||"Error"); return; }
-    alert("Empresas guardadas");
-  }
+    function fillProjectsFor(user){
+      const list = [];
+      if(user?.proyectos){
+        user.proyectos.split(',').map(t=>t.trim()).forEach(t=>{if(t) list.push(t)})
+      }
+      if(user?.proyDef && !list.includes(user.proyDef)) list.unshift(user.proyDef)
+      const html = list.length? list.map(p=>`<option>${p}</option>`).join('') : `<option>-</option>`;
+      document.querySelectorAll('.sel-proy').forEach(s=> s.innerHTML = html);
+      $('#projPrincipal').textContent = 'PROYECTO PRINCIPAL: ' + (user?.proyDef || '—');
+    }
 
-  async function saveUsuarios(){
-    const rows = collect("#usrTable").map(u=>({
-      ...u,
-      activo: Number(u.activo||0),
-    }));
-    const r = await fetch(API+"/api/usuarios",{
-      method:"PUT",
-      headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
-      body: JSON.stringify(rows)
-    });
-    const j = await r.json();
-    if(!r.ok){ alert(j.error||"Error"); return; }
-    alert("Usuarios guardados");
-  }
+    // --- login / logout ------------------------------------------------------
+    function openLogin(){ $('#loginBack').style.display='flex'; $('#loginEmail').focus(); }
+    function closeLogin(){ $('#loginBack').style.display='none'; }
 
-  // ------ start ------
-  (async ()=>{
-    await loginFlow();
-    if(!me){ await loadMe(); }
-    await initAfterAuth();
-  })();
-</script>
+    function doLogout(){
+      localStorage.removeItem('token');
+      state.token = '';
+      state.me = null;
+      $('#btnLogin').classList.remove('hide');
+      $('#btnLogout').classList.add('hide');
+      $('#connected').textContent = 'No autenticado';
+      openLogin();
+    }
+
+    async function doLogin(){
+      try{
+        const email = $('#loginEmail').value.trim();
+        const password = $('#loginPass').value;
+        const r = await fetch('/api/login', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({email,password})
+        });
+        const data = await r.json();
+        if(!r.ok){ alert(data.error || 'No autenticado'); return; }
+        state.token = data.token; localStorage.setItem('token', state.token);
+        state.me = data.me;
+        closeLogin();
+        $('#btnLogin').classList.add('hide');
+        $('#btnLogout').classList.remove('hide');
+        await loadApp();
+      }catch(e){ console.error(e); alert('No se pudo iniciar sesión'); }
+    }
+
+    // --- carga de datos ------------------------------------------------------
+    async function loadApp(){
+      // empresa/usuarios/pcs
+      const [empresas, usuarios, pcs] = await Promise.all([
+        authFetch('/api/empresas'),
+        authFetch('/api/usuarios'),
+        authFetch('/api/pcs')
+      ]);
+      state.empresas = empresas;
+      state.usuarios = usuarios;
+      state.pcs = pcs;
+
+      const me = state.usuarios.find(u=>u.email===state.me.email) || state.me;
+      state.me = me;
+
+      // Top "Conectado…"
+      $('#connected').innerHTML = `Conectado: <strong>${me.nombres} ${me.apellidos}</strong> — ${me.email} — Rol: <strong>${me.rol}</strong>`;
+
+      // Empresa header
+      const emp = state.empresas.find(e=>e.id===me.empresaId);
+      $('#empRazon').textContent = emp?.razon || '—';
+      $('#empRuc').textContent = emp?.ruc || '—';
+      $('#empDir').textContent = emp?.direccion || '—';
+      if(emp?.logo){ $('#empLogo').src = emp.logo; $('#empLogo').style.display='block'; }
+
+      // Serie + DNI
+      $('#serie').textContent = serieFrom((me.nombres||'xx'),(me.apellidos||'yy'));
+      $('#dni').textContent = me.dni || '—';
+
+      // Fecha hoy
+      $('#inpFecha').value = new Date().toISOString().slice(0,10);
+
+      // Selector de trabajador
+      const sel = $('#selTrab');
+      sel.innerHTML = '';
+      if(me.rol==='ADMIN_PADOVA'){
+        // admin puede elegir
+        state.usuarios.forEach(u=>{
+          const o=document.createElement('option'); o.value=u.dni; o.textContent=`${u.nombres} ${u.apellidos}`;
+          if(u.email===me.email) o.selected=true;
+          sel.appendChild(o);
+        });
+        $('#iconsABM').classList.add('hide'); // no mostramos “+ / lápiz” para evitar confusión
+      }else{
+        // usuario normal solo se ve a sí mismo
+        const o=document.createElement('option'); o.value=me.dni; o.textContent=`${me.nombres} ${me.apellidos}`;
+        sel.appendChild(o);
+        sel.disabled = true;
+        $('#iconsABM').classList.add('hide');
+      }
+      sel.onchange = ()=>{
+        const user = state.usuarios.find(u=>u.dni===sel.value);
+        if(user){ fillProjectsFor(user); $('#dni').textContent = user.dni; $('#serie').textContent = serieFrom(user.nombres,user.apellidos); }
+      };
+
+      // PCs y filas
+      buildRows();
+
+      // Acumulado inicial
+      await refreshAcumulado();
+    }
+
+    async function refreshAcumulado(){
+      const dni = $('#selTrab').value || state.me.dni;
+      const fecha = $('#inpFecha').value;
+      const qs = new URLSearchParams({dni,fecha}).toString();
+      try{
+        const r = await authFetch('/api/acumulado?'+qs);
+        const acum = Number(r.total||0);
+        const tope = 45;
+        $('#tope').textContent = fmt(tope);
+        $('#acum').textContent = fmt(acum);
+        $('#disp').textContent = fmt(Math.max(0,tope-acum));
+      }catch(e){
+        $('#tope').textContent=fmt(45);$('#acum').textContent=fmt(0);$('#disp').textContent=fmt(45);
+      }
+    }
+
+    // --- guardar -------------------------------------------------------------
+    async function guardarExportar(){
+      const dni = $('#selTrab').value || state.me.dni;
+      const fecha = $('#inpFecha').value;
+      const detalles = [];
+      document.querySelectorAll('#tbody tr').forEach(tr=>{
+        const dest = tr.querySelector('.inp-dest').value.trim();
+        const mot  = tr.querySelector('.inp-mot').value.trim();
+        const proy = tr.querySelector('.sel-proy').value;
+        const pc   = tr.querySelector('.sel-pc').value;
+        const monto= Number(tr.querySelector('.inp-monto').value||0);
+        if(dest || mot || monto>0){
+          detalles.push({destino:dest,motivo:mot,proyecto:proy,pc,monto});
+        }
+      });
+      if(!detalles.length){ alert('Ingresa al menos un detalle.'); return; }
+      try{
+        const r = await authFetch('/api/planillas',{method:'POST',body:JSON.stringify({dni,fecha,detalles})});
+        if(r.error){
+          alert((r.error||'') + (r.disponible!==undefined? ` · Disponible: S/ ${r.disponible}`:''));
+          return;
+        }
+        alert(`Guardado OK · Serie ${r.serie} · Nro ${r.num} · Total ${fmt(r.total)}`);
+        await refreshAcumulado();
+      }catch(e){ console.error(e); alert('No se pudo guardar la planilla'); }
+    }
+
+    // --- eventos -------------------------------------------------------------
+    $('#btnLogin').onclick = openLogin;
+    $('#btnLogout').onclick = doLogout;
+    $('#btnDoLogin').onclick = doLogin;
+    $('#btnExport').onclick = guardarExportar;
+    $('#btnDemo').onclick = async()=>{
+      // pequeño helper por si quieres volver a “estado demo”
+      alert('La carga demo se mantiene con tus datos actuales. (Si necesitas un reseteo total, hazlo desde SQL como antes).');
+    }
+    $('#inpFecha').addEventListener('change', refreshAcumulado);
+
+    // bootstrap
+    (async ()=>{
+      if(!state.token){ openLogin(); return; }
+      try{
+        // Validar token “de facto” cargando algo protegido
+        await loadApp();
+        $('#btnLogin').classList.add('hide');
+        $('#btnLogout').classList.remove('hide');
+      }catch(e){ openLogin(); }
+    })();
+  </script>
 </body>
 </html>
