@@ -1,9 +1,10 @@
 /**
- * server.cjs (v11) – Fix columna empresaid + robustez de guardado
+ * server.cjs (v10) – Robustez para guardar y exportar PDF
  * - Correlativo por usuario (dni) con transacción
- * - Parser de montos (evita NaN)
- * - Solo inserta filas con monto > 0
- * - Bootstrap asegura empresaid en historial (ALTER IF NOT EXISTS)
+ * - Parser de montos: limpia "S/", comas, espacios, strings vacíos → número
+ * - Filtra filas con monto <= 0 (no se insertan)
+ * - Mensajes de error claros; logs de diagnóstico en POST /api/planillas
+ * - Endpoints compatibles con el front actual
  */
 
 require('dotenv').config();
@@ -37,22 +38,22 @@ const normalizeFecha = (f)=>{
   const s = String(f||'').trim();
   if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)){ const [dd,mm,yy]=s.split('/'); return `${yy}-${mm}-${dd}`; }
   if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  return s;
+  return s; // deja pasar por compatibilidad
 };
 const errMsg = (e, fb='Error inesperado') => e?.msg || e?.detail || e?.hint || (e?.code?`${fb} (PG:${e.code})`:fb);
 
-// "S/ 45,00" -> 45.00
+// Limpia "S/ 45,00", "45.0", "", null → número con 2 decimales
 function toMoney(v){
   if(v === null || v === undefined) return 0;
   let s = String(v).trim();
-  s = s.replace(/,/g,'.').replace(/[^0-9.\-]/g,'');
+  s = s.replace(/,/g,'.').replace(/[^0-9.\-]/g,'');        // quita símbolos
   const parts = s.split('.');
   if(parts.length > 2){ const last = parts.pop(); s = parts.join('') + '.' + last; }
   const n = parseFloat(s);
   return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
 }
 
-// ---------- bootstrap ----------
+// ---------- bootstrap (idempotente) ----------
 async function bootstrap(){
   await q(`
     CREATE TABLE IF NOT EXISTS empresas (
@@ -89,9 +90,6 @@ async function bootstrap(){
       empresaid TEXT, created_at TIMESTAMP DEFAULT NOW()
     );
 
-    -- <<< ESTA LÍNEA GARANTIZA LA COLUMNA EN BD EXISTENTES >>>
-    ALTER TABLE historial ADD COLUMN IF NOT EXISTS empresaid TEXT;
-
     CREATE INDEX IF NOT EXISTS idx_historial_dni_fecha ON historial(dni,fecha);
     CREATE INDEX IF NOT EXISTS idx_historial_planilla ON historial(dni,serie,num);
 
@@ -123,8 +121,19 @@ async function bootstrap(){
 
 // ---------- debug ----------
 app.get('/api/debug/ping', (_req,res)=> res.json({ok:true, ts:new Date().toISOString()}));
+app.get('/api/debug/planillas/peek', async (req,res)=>{
+  const dni = String(req.query.dni||'');
+  const fecha = normalizeFecha(req.query.fecha||'');
+  if(!dni||!fecha) return res.status(400).json({ok:false,msg:'dni y fecha requeridos'});
+  try{
+    const acc = (await q(`SELECT COALESCE(SUM(total),0) AS s FROM historial WHERE dni=$1 AND fecha=$2`, [dni,fecha])).rows[0].s;
+    res.json({ok:true, acumulado: Number(acc)});
+  }catch(e){ res.status(500).json({ok:false,msg:errMsg(e)}); }
+});
 
-// ---------- públicas ----------
+// ---------- públicas (compat front) ----------
+app.get('/api/health', (_req,res)=> res.json({ok:true}));
+
 app.get('/api/login', async (req,res)=>{
   try{
     const email = String(req.query.email||'').toLowerCase();
@@ -156,6 +165,7 @@ app.get('/api/usuarios', async (_req,res)=>{
   }catch(e){ console.error(e); res.status(500).json([]); }
 });
 
+// ---------- counters: peek por dni (no incrementa) ----------
 app.get('/api/counters/next', async (req,res)=>{
   try{
     const dni = String(req.query.dni||'');
@@ -165,24 +175,32 @@ app.get('/api/counters/next', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json({ next:'00000' }); }
 });
 
-// ---------- planillas ----------
+// ---------- planillas (transacción + correlativo por usuario) ----------
 app.post('/api/planillas', async (req,res)=>{
   const client = await pool.connect();
+  // Log diagnóstico (no expone datos sensibles)
   const dbg = (label, obj)=> console.log(`[planillas] ${label}:`, JSON.stringify(obj).slice(0,400));
+
   try{
     const { dni, email, fecha, items=[] } = req.body||{};
     dbg('payload.head', {dni,email,fecha, items_len: Array.isArray(items)?items.length:null});
+
     if(!dni || !email || !fecha || !Array.isArray(items)){
       client.release(); return res.status(400).json({ ok:false, msg:'Payload inválido' });
     }
 
-    const normalized = (items||[]).map((it,i)=>({
-      proyecto: norm(it.proyecto || ''),
-      destino : norm(it.destino  || ''),
-      motivo  : norm(it.motivo   || ''),
-      pc      : String(it.pc || ''),
-      monto   : toMoney(it.monto)
-    })).filter(it => it.monto > 0);
+    // Normaliza y filtra
+    const normalized = (items||[]).map((it,i) => {
+      const obj = {
+        proyecto: norm(it.proyecto || ''),
+        destino : norm(it.destino  || ''),
+        motivo  : norm(it.motivo   || ''),
+        pc      : String(it.pc || ''),
+        monto   : toMoney(it.monto)
+      };
+      dbg(`item[${i}]`, obj);
+      return obj;
+    }).filter(it => it.monto > 0);
 
     if(!normalized.length){
       client.release(); return res.status(400).json({ ok:false, msg:'No hay filas con monto > 0' });
@@ -197,6 +215,7 @@ app.post('/api/planillas', async (req,res)=>{
     const acc = (await client.query(`SELECT COALESCE(SUM(total),0) AS s FROM historial WHERE dni=$1 AND fecha=$2`, [dni, fechaISO])).rows[0].s;
     const totalItems = Number(normalized.reduce((a,b)=>a + b.monto, 0).toFixed(2));
     dbg('totales', {acc:Number(acc), totalItems, TOPE});
+
     if(Number(acc) + totalItems > TOPE){
       await client.query('ROLLBACK'); client.release();
       return res.status(400).json({ ok:false, msg:`Excede el tope diario de S/${TOPE}. Acumulado: S/${acc}` });
@@ -238,7 +257,7 @@ app.post('/api/planillas', async (req,res)=>{
   }
 });
 
-// ---------- historial ----------
+// ---------- historial (compat) ----------
 app.get('/api/historial', async (req,res)=>{
   try{
     const dni = req.query.dni ? String(req.query.dni) : null;
@@ -268,7 +287,7 @@ app.get('/api/historial/by-date', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json([]); }
 });
 
-// ---------- admin pin ----------
+// ---------- admin pin (opcional) ----------
 app.post('/api/admin/pin', async (req,res)=>{
   try{ const pin = String(req.body?.pin||''); res.json({ ok: pin===ADMIN_PIN }); }
   catch(e){ console.error(e); res.status(500).json({ ok:false }); }
