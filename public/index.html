@@ -284,11 +284,10 @@ async function api(path, opt={}){
 
 /* =================== Login (UI + sesión) =================== */
 function findLoginEls(){
-  // Tolerante a distintos IDs/clases
-  const modal = qs('#modal-login') || qs('.modal-login') || qs('[data-modal="login"]') || document.querySelector('[aria-label="Iniciar sesión"]') || null;
-  const email = qs('#login-email') || (modal?modal.querySelector('input[type="email"]'):null) || qs('input[type="email"]');
-  const pass  = qs('#login-pass')  || (modal?modal.querySelector('input[type="password"]'):null) || qs('input[type="password"]');
-  const btn   = qs('#btn-login')   || (modal?modal.querySelector('button, input[type="submit"]'):null) || null;
+  const modal = qs('#login-overlay') || qs('#modal-login') || qs('.modal-login') || qs('[data-modal="login"]') || qs('[aria-label="Iniciar sesión"]') || null;
+  const email = qs('#local-email') || qs('#login-email') || (modal?modal.querySelector('input[type="email"]'):null) || qs('input[type="email"]');
+  const pass  = qs('#local-pass')  || qs('#login-pass')  || (modal?modal.querySelector('input[type="password"]'):null) || qs('input[type="password"]');
+  const btn   = qs('#btn-local-login') || qs('#btn-login')   || (modal?modal.querySelector('button, input[type="submit"]'):null) || null;
   return { modal, email, pass, btn };
 }
 
@@ -329,14 +328,11 @@ function wireLoginUI(){
 
 /* =================== Carga base (empresas/usuarios) =================== */
 async function cargarEmpresasYUsuarios(isPostLogin=false){
-  // Empresas con fallback
   try{ STATE.empresas = await api('/api/empresas?simple=1'); }
   catch{ STATE.empresas = await api('/api/empresas'); }
 
-  // Usuarios
   STATE.usuarios = await api('/api/usuarios');
 
-  // Usuario actual: prioriza SESSION, luego localStorage, luego admin
   let email = window.SESSION.email;
   if (!email){
     try{ email = localStorage.getItem('planilla_email') || ''; }catch{}
@@ -357,7 +353,6 @@ async function cargarEmpresasYUsuarios(isPostLogin=false){
   renderEmpresaHeader();
   llenarTrabajadores();
 
-  // Llamadas opcionales si existen en tu código
   if (typeof window.onTrabajadorChange === 'function') window.onTrabajadorChange();
   if (typeof window.renderRows === 'function') window.renderRows();
 }
@@ -369,11 +364,8 @@ function renderEmpresaHeader(){
   const razon = emp ? emp.razon : '—';
   const ruc   = emp ? emp.ruc   : '—';
 
-  // Soporta clases o IDs
-  qsa('.emp-razon').forEach(el => el.textContent = razon);
-  qsa('.emp-ruc').forEach(el => el.textContent = ruc);
-  if (qs('#razon')) qs('#razon').textContent = razon;
-  if (qs('#ruc'))   qs('#ruc').textContent   = ruc;
+  qsa('.emp-razon,#razon').forEach(el => el.textContent = razon);
+  qsa('.emp-ruc,#ruc').forEach(el => el.textContent = ruc);
 }
 
 /* =================== Selector de trabajador =================== */
@@ -493,7 +485,6 @@ async function renderPDF({ fecha, items, total, serie, num, emp, u }){
 /* =================== Arranque =================== */
 window.addEventListener('DOMContentLoaded', async ()=>{
   try{
-    // Recuperar sesión si existe
     if (!window.SESSION.email){
       try{ window.SESSION.email = localStorage.getItem('planilla_email') || ''; }catch{}
     }
@@ -502,11 +493,9 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     wireLoginUI();
     await cargarEmpresasYUsuarios();
 
-    // Botón guardar/exportar
     const btn = qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar');
     if (btn) btn.addEventListener('click', guardarPlanilla);
 
-    // Si hay modal visible pero ya tenemos sesión válida, lo ocultamos
     if (window.CURRENT_USER && window.SESSION.email) hideLoginModal();
 
   }catch(e){
@@ -577,6 +566,109 @@ window.addEventListener('DOMContentLoaded', async ()=>{
       .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display=''; el.removeAttribute('aria-hidden'); }));
   }
 })();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script>
+window.SESSION = window.SESSION || {};
+window.CURRENT_USER = window.CURRENT_USER || null;
+const STATE = { empresas: [], usuarios: [] };
+
+const qs = s => document.querySelector(s);
+const qsa = s => Array.from(document.querySelectorAll(s));
+function toMoney(v){ if(v==null) return 0; let s=String(v).trim().replace(/,/g,'.').replace(/[^0-9.\-]/g,''); const p=s.split('.'); if(p.length>2){const l=p.pop(); s=p.join('')+'.'+l;} const n=parseFloat(s); return Number.isFinite(n)?Number(n.toFixed(2)):0; }
+async function api(path,opt={}){ const r=await fetch(path,{headers:{'Content-Type':'application/json'},credentials:'same-origin',...opt}); let d=null; try{d=await r.json();}catch{} if(!r.ok){throw {...d,status:r.status,msg:(d&&(d.msg||d.error))||('HTTP '+r.status)};} return d; }
+
+function findLoginEls(){ const modal=qs('#modal-login')||qs('.modal-login')||qs('[data-modal="login"]')||qs('[aria-label="Iniciar sesión"]')||null; const email=qs('#login-email')||(modal?modal.querySelector('input[type="email"]'):null)||qs('input[type="email"]'); const pass=qs('#login-pass')||(modal?modal.querySelector('input[type="password"]'):null)||qs('input[type="password"]'); const btn=qs('#btn-login')||(modal?modal.querySelector('button, input[type="submit"]'):null)||null; return {modal,email,pass,btn}; }
+function showLogin(){ const {modal}=findLoginEls(); if(modal){ modal.style.display=''; modal.removeAttribute('aria-hidden'); } }
+function hideLogin(){ const {modal}=findLoginEls(); if(modal){ modal.style.display='none'; modal.setAttribute('aria-hidden','true'); } }
+
+async function doLogin(email){
+  const u = await api('/api/login?email='+encodeURIComponent(String(email||'').trim()));
+  if(!u || !u.activo) throw new Error('Usuario inexistente o inactivo');
+  window.SESSION.email = u.email; window.CURRENT_USER = u;
+  try{ localStorage.setItem('planilla_email', u.email); }catch{}
+  hideLogin(); await cargarEmpresasYUsuarios(true);
+}
+
+function wireLogin(){
+  const {email,btn} = findLoginEls(); if(!btn) return;
+  btn.addEventListener('click', async (ev)=>{ ev.preventDefault(); try{
+    const em = (email && email.value) ? email.value.trim() : '';
+    if(!em){ alert('Ingrese el email'); return; }
+    await doLogin(em);
+  }catch(e){ console.error(e); alert(e?.msg||e?.message||'No se pudo iniciar sesión'); }});
+}
+
+async function cargarEmpresasYUsuarios(post=false){
+  try{ STATE.empresas = await api('/api/empresas?simple=1'); }
+  catch{ STATE.empresas = await api('/api/empresas'); }
+
+  STATE.usuarios = await api('/api/usuarios');
+
+  let email = window.SESSION.email;
+  if(!email && !post){ try{ email = localStorage.getItem('planilla_email')||''; }catch{} }
+  if(!email && !post) email='admin@empresa.com';
+
+  if(email){ try{ const u=await api('/api/login?email='+encodeURIComponent(email)); if(u){window.CURRENT_USER=u; window.SESSION.email=u.email;} }catch{} }
+  if(!window.CURRENT_USER){ const u=STATE.usuarios.find(x=>x.activo)||STATE.usuarios[0]||null; window.CURRENT_USER=u; }
+
+  renderEmpresaHeader(); llenarTrabajadores();
+  if(typeof window.onTrabajadorChange==='function') window.onTrabajadorChange();
+  if(typeof window.renderRows==='function') window.renderRows();
+}
+
+function renderEmpresaHeader(){
+  const emp = STATE.empresas.find(e=>e.id===(window.CURRENT_USER?.empresaid||'')); const razon = emp?emp.razon:'—'; const ruc = emp?emp.ruc:'—';
+  qsa('.emp-razon,#razon').forEach(el=> el.textContent=razon);
+  qsa('.emp-ruc,#ruc').forEach(el=> el.textContent=ruc);
+}
+
+function llenarTrabajadores(){
+  const sel=qs('#sel-trabajador')||qs('select[name="trabajador"]'); if(!sel) return;
+  sel.innerHTML=''; STATE.usuarios.filter(u=>u.activo).forEach(u=>{ const o=document.createElement('option'); o.value=u.email; o.textContent=`${u.nombres} ${u.apellidos}`; if(window.CURRENT_USER&&u.email.toLowerCase()===window.CURRENT_USER.email.toLowerCase()) o.selected=true; sel.appendChild(o); });
+  sel.onchange=()=>{ const email=sel.value; const u=STATE.usuarios.find(x=>x.email.toLowerCase()===email.toLowerCase()); if(u){ window.CURRENT_USER=u; window.SESSION.email=u.email; try{localStorage.setItem('planilla_email',u.email);}catch{} renderEmpresaHeader(); if(typeof window.onTrabajadorChange==='function') window.onTrabajadorChange(); }};
+}
+
+async function guardarPlanilla(){
+  if(!window.CURRENT_USER){ alert('Seleccione un trabajador'); return; }
+  const fecha = qs('#f-emision')?.value || '';
+  const items=[]; qsa('.trow').forEach(r=>{ const destino=(r.querySelector('.destino')?.value||'').trim().toUpperCase(); const motivo=(r.querySelector('.motivo')?.value||'').trim().toUpperCase(); const proyecto=(r.querySelector('.proyecto')?.value||'').trim().toUpperCase(); const pc=(r.querySelector('.pc')?.value||'').trim(); const monto=toMoney(r.querySelector('.monto')?.value); if(monto>0) items.push({destino,motivo,proyecto,pc,monto}); });
+  if(!items.length){ alert('Ingrese al menos un ítem con monto'); return; }
+  const btn = qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar'); if(btn) btn.disabled=true;
+  try{
+    const res = await api('/api/planillas',{ method:'POST', body: JSON.stringify({ dni: window.CURRENT_USER.dni, email: (window.SESSION?.email||window.CURRENT_USER.email), fecha, items })});
+    await renderPDF({ fecha:res.fecha||fecha, items, total:res.total, serie:res.serie, num:res.num, emp:res.empresa, u:window.CURRENT_USER });
+    alert(`Planilla ${res.serie}-${res.num} guardada y exportada.`);
+    if(typeof window.renderHistorial==='function') window.renderHistorial();
+  }catch(e){ alert(e?.msg||e?.error||'Error al guardar.'); console.error(e); }
+  finally{ if(btn) btn.disabled=false; }
+}
+
+async function renderPDF({ fecha, items, total, serie, num, emp, u }){
+  const jsPDFCtor=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF; if(!jsPDFCtor) throw new Error('No se pudo cargar jsPDF');
+  const doc=new jsPDFCtor({unit:'pt',format:'a4'});
+  const razon=(emp&&emp.razon)||'PADOVA', ruc=(emp&&emp.ruc)||'—';
+  doc.setFontSize(12); doc.text(razon,40,40); doc.text(`R.U.C.: ${ruc}`,40,58);
+  doc.setFontSize(14); doc.text('PLANILLA DE MOVILIDAD',300,40,{align:'center'}); doc.text(`Planilla Nro. ${serie}-${num}`,300,58,{align:'center'});
+  doc.setFontSize(10); const trabajador=`${(u?.nombres||'').toUpperCase()} ${(u?.apellidos||'').toUpperCase()}  DNI: ${u?.dni||''}`;
+  doc.text(`Fecha de Emisión: ${fecha}`,40,90); doc.text(`Trabajador: ${trabajador}`,40,108);
+  let y=140; const cols=['#','DESTINO','MOTIVO','PROYECTO','PC','MONTO (S/)'], w=[24,120,120,140,60,80];
+  const row=(c,yy,h=false)=>{ let x=40; for(let i=0;i<c.length;i++){ doc.rect(x,yy,w[i],22); doc.setFontSize(h?10:9); doc.text(String(c[i]??''),x+3,yy+14); x+=w[i]; } };
+  row(cols,y,true); y+=22;
+  items.forEach((it,ix)=>{ if(y>760){ doc.addPage(); y=40; } row([ix+1,(it.destino||'').toUpperCase(),(it.motivo||'').toUpperCase(),(it.proyecto||'').toUpperCase(),(it.pc||''),Number(it.monto||0).toFixed(2)],y); y+=22; });
+  y+=10; doc.setFontSize(12); doc.text(`Total: S/ ${Number(total||0).toFixed(2)}`,40,y+20);
+  doc.save(`${serie}-${num}.pdf`);
+}
+
+window.addEventListener('DOMContentLoaded', async ()=>{
+  try{
+    if(!window.SESSION.email){ try{ window.SESSION.email = localStorage.getItem('planilla_email')||''; }catch{} }
+    if(!window.SESSION.email) window.SESSION.email='admin@empresa.com';
+    wireLogin(); await cargarEmpresasYUsuarios();
+    const btn=qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar'); if(btn) btn.addEventListener('click', guardarPlanilla);
+    if(window.CURRENT_USER && window.SESSION.email) hideLogin();
+  }catch(e){ console.error('Boot UI error:', e); alert('No se pudo cargar datos base.'); showLogin(); }
+});
 </script>
 </body>
 </html>
