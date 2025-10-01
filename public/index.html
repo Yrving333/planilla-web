@@ -516,5 +516,67 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 </script>
+<script>
+/* =========================
+   HOTFIX ACCESO (auto-login)
+   ========================= */
+(async () => {
+  // 1) Si ya hay sesión válida, no hacemos nada
+  try {
+    if (!window.SESSION) window.SESSION = {};
+    if (window.SESSION.email) {
+      // Forzar ocultar modal si quedó abierto
+      ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay']
+        .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display='none'; el.setAttribute('aria-hidden','true'); }));
+      return;
+    }
+  } catch (_) {}
+
+  // 2) Intentar recuperar email previo almacenado
+  let email = '';
+  try { email = localStorage.getItem('planilla_email') || ''; } catch (_) {}
+
+  // 3) Fallback a admin si no hay sesión previa
+  if (!email) email = 'admin@empresa.com';
+
+  // 4) Login contra la API
+  try {
+    const r = await fetch('/api/login?email=' + encodeURIComponent(email), { credentials: 'same-origin' });
+    const u = await r.json();
+
+    if (u && u.email && (u.activo === true || u.activo === '1')) {
+      // Guardar sesión en memoria y storage
+      window.SESSION = { email: u.email };
+      window.CURRENT_USER = u;
+      try { localStorage.setItem('planilla_email', u.email); } catch (_) {}
+
+      // 5) Ocultar/cerrar cualquier modal/overlay de login conocido
+      const killers = ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay','.backdrop','.dialog','[role="dialog"]'];
+      killers.forEach(sel => document.querySelectorAll(sel).forEach(el => el.remove()));
+
+      // 6) Continuar boot de la UI si existe la función
+      if (typeof window.cargarEmpresasYUsuarios === 'function') {
+        await window.cargarEmpresasYUsuarios(true);
+      } else {
+        // Render mínimo de cabecera si no existe la función
+        const razonEls = document.querySelectorAll('.emp-razon,#razon');
+        const rucEls   = document.querySelectorAll('.emp-ruc,#ruc');
+        (razonEls||[]).forEach(el => el.textContent = (u.empresaid || '—'));
+        (rucEls||[]).forEach(el => el.textContent   = '');
+      }
+    } else {
+      // No hay usuario/está inactivo: mostrar modal (si existe)
+      ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay']
+        .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display=''; el.removeAttribute('aria-hidden'); }));
+      console.warn('Auto-login: usuario no activo o no encontrado:', email);
+    }
+  } catch (e) {
+    console.error('Auto-login falló:', e);
+    // Mostrar modal (si existe) para que intentes manualmente
+    ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay']
+      .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display=''; el.removeAttribute('aria-hidden'); }));
+  }
+})();
+</script>
 </body>
 </html>
