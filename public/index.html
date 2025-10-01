@@ -4,94 +4,52 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Planilla de Movilidad — S/45</title>
-
-<!-- PDF -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-  :root{
-    --primary:#2563eb;--primary-600:#1d4ed8;
-    --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
-    --bg:#f1f5f9;--card:#ffffff;--chip:#f8fafc;
-    --ok:#16a34a;--bad:#ef4444;--zebra:#fafafa
-  }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);padding:20px;display:flex;justify-content:center}
-  .app{width:100%;max-width:1180px}
-  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-  .who{font-size:.88rem;color:var(--muted)}
-  .btn{border:none;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;letter-spacing:.2px}
-  .btn.primary{background:var(--primary);color:#fff;box-shadow:0 6px 20px rgba(37,99,235,.18)}
-  .btn.primary:hover{background:var(--primary-600)}
-  .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
-  .btn.small{padding:7px 10px;font-size:.9rem}
-  .tabs{display:flex;gap:12px;margin-bottom:16px}
-  .tab{padding:10px 16px;border:none;background:transparent;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:700}
-  .tab.active{color:var(--primary);border-bottom-color:var(--primary)}
-  .view{display:none}.view.active{display:block}
-
-  .card{background:var(--card);border-radius:16px;box-shadow:0 10px 28px rgba(2,8,23,.06);margin-bottom:16px;overflow:hidden}
-  .card-h,.card-b{padding:18px 20px}.card-h{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#ffffff,#fbfdff)}
-  .brand{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
-  .brand img{max-height:42px}
-  .cinfo{font-size:.86rem;color:var(--muted);text-align:right;line-height:1.45}
-  .cinfo b{color:var(--ink)}
-  h1.title{margin:8px 0 2px;text-align:center;font-size:1.28rem;letter-spacing:.2px}
-  .subtitle{margin:0;text-align:center;color:#1d4ed8;font-weight:800;font-size:.92rem}
-
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .group label{display:block;margin:0 0 6px;font-weight:700;font-size:.9rem}
-  .group input,.group select,.group textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;font-size:.95rem;background:#fff}
-  .uppercase{text-transform:uppercase}
-  .worker-row{display:flex;gap:8px;align-items:flex-end}
-
-  .list{padding:0 20px 10px}
-  .thead,.trow{display:grid;grid-template-columns:34px 1.2fr 1.2fr 1fr .7fr .7fr;gap:10px;align-items:center}
-  .thead{padding:0 0 6px;color:var(--muted);text-transform:uppercase;font-size:.72rem}
-  .trow{padding:6px 10px;border-bottom:1px solid var(--line);background:#fff}
-  .trow:nth-child(odd){background:var(--zebra)}
-  .trow input,.trow select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff}
-  .num{color:var(--muted);text-align:center;font-weight:900}
-
-  .alert{width:calc(100% - 40px);background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:12px;padding:10px 12px;margin:6px 20px 0;display:none}
-  .total{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;align-items:center;background:var(--chip);border-top:1px solid var(--line);padding:14px 20px}
-  .pill{font-size:.78rem;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:white}
-  .amount{font-size:1.22rem;font-weight:900}
-  .amount.ok{color:var(--ok)} .amount.bad{color:var(--bad)}
-  .legal{font-size:.75rem;color:#6b7280;text-align:justify;padding:0 20px 18px}
-
-  .table-wrap{overflow-x:auto}
-  table.tbl{width:100%;border-collapse:collapse;table-layout:fixed}
-  .tbl th,.tbl td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .tbl th{background:#f8fafc;text-transform:uppercase;font-size:.7rem}
-  .center{text-align:center}
-  .w-s{width:78px;min-width:78px}
-  .w-m{width:108px;min-width:108px}
-  .w-l{width:160px;min-width:160px}
-
-  .login-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999}
-  .login-card{background:#fff;border-radius:16px;box-shadow:0 12px 36px rgba(0,0,0,.25);padding:22px 20px;min-width:340px;max-width:420px}
-  .login-card h3{margin:0 0 6px}
-  .hint{font-size:.82rem;color:var(--muted);margin-top:4px}
-  .login-actions{display:flex;gap:8px;margin-top:12px;justify-content:flex-end;flex-wrap:wrap}
-  .danger{background:#ef4444;color:#fff}
+/* ---- estilos (recortado para brevedad; UI limpio y funcional) ---- */
+:root{--p:#2563eb;--p6:#1d4ed8;--ink:#0f172a;--mut:#64748b;--line:#e2e8f0;--bg:#f1f5f9;--card:#fff;--ok:#16a34a;--bad:#ef4444}
+*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);padding:20px;display:flex;justify-content:center}
+.app{width:100%;max-width:1180px} .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.btn{border:1px solid var(--line);background:#fff;border-radius:12px;padding:9px 12px;font-weight:700;cursor:pointer}
+.btn.primary{background:var(--p);color:#fff;border-color:var(--p)} .btn.primary:hover{background:var(--p6)}
+.tabbar{display:flex;gap:12px;margin:6px 0 16px} .tab{border:none;background:transparent;padding:10px 14px;font-weight:700;border-bottom:2px solid transparent;color:var(--mut);cursor:pointer}
+.tab.active{color:var(--p);border-bottom-color:var(--p)} .view{display:none}.view.active{display:block}
+.card{background:var(--card);border-radius:16px;box-shadow:0 10px 28px rgba(2,8,23,.06);margin-bottom:14px;overflow:hidden}
+.card-h,.card-b{padding:16px 18px}.card-h{border-bottom:1px solid var(--line)}
+.brand{display:flex;justify-content:space-between;gap:12px}
+#logo{max-height:40px;display:none} .cinfo{text-align:right;color:var(--mut);font-size:.9rem} .cinfo b{color:var(--ink)}
+h1{margin:8px 0 2px;text-align:center;font-size:1.25rem} .sub{margin:0;text-align:center;color:var(--p);font-weight:800;font-size:.9rem}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px} .group label{font-weight:700;display:block;margin-bottom:6px}
+.group input,.group select,.group textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px}
+.list{padding:0 18px 8px} .thead,.row{display:grid;grid-template-columns:34px 1.2fr 1.2fr 1fr .75fr .75fr;gap:8px;align-items:center}
+.thead{padding:0 0 4px;color:var(--mut);text-transform:uppercase;font-size:.75rem}
+.row{padding:6px 8px;border-bottom:1px solid var(--line);background:#fff}
+.alert{margin:6px 18px 0;background:#fee2e2;color:#991b1b;padding:10px;border:1px solid #fecaca;border-radius:10px;display:none}
+.total{padding:12px 18px;background:#f8fafc;border-top:1px solid var(--line);display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap}
+.pill{font-size:.78rem;padding:4px 8px;border-radius:999px;border:1px solid var(--line);background:#fff}
+.amount{font-weight:900} .ok{color:var(--ok)} .bad{color:var(--bad)}
+.login{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:9999}
+.login .box{background:#fff;border-radius:16px;padding:18px;min-width:320px;max-width:420px}
+.table-wrap{overflow:auto} table{border-collapse:collapse;width:100%} th,td{border-bottom:1px solid var(--line);padding:6px 8px;font-size:.85rem;text-align:left}
 </style>
 </head>
 <body>
 <div class="app">
-  <div class="topbar">
-    <div class="who" id="who">No autenticado</div>
+  <div class="top">
+    <div id="who" style="color:#64748b">No autenticado</div>
     <div>
-      <button id="btn-login" class="btn primary">Iniciar sesión</button>
-      <button id="btn-logout" class="btn ghost" style="display:none">Cerrar sesión</button>
+      <button id="btnOpenLogin" class="btn">Iniciar sesión</button>
+      <button id="btnLogout" class="btn" style="display:none">Cerrar sesión</button>
     </div>
   </div>
 
-  <div class="tabs">
+  <div class="tabbar">
     <button class="tab active" data-tab="new">Nueva Planilla</button>
     <button class="tab" data-tab="hist">Historial</button>
-    <button id="tab-admin" class="tab" data-tab="admin" style="display:none">Ajustes (Admin)</button>
+    <button class="tab" id="tabAdmin" data-tab="adm" style="display:none">Ajustes (Admin)</button>
   </div>
 
   <!-- NUEVA -->
@@ -99,576 +57,628 @@
     <div class="card">
       <div class="card-h">
         <div class="brand">
-          <img id="logo" alt="Logo empresa" style="display:none">
-          <div id="cinfo" class="cinfo"><b>—</b><br>R.U.C. —<br><span id="caddr"></span></div>
+          <img id="logo" alt="logo">
+          <div class="cinfo"><b id="emp-razon">—</b><br>R.U.C. <span id="emp-ruc">—</span></div>
         </div>
-        <h1 id="h-num" class="title">PLANILLA DE MOVILIDAD</h1>
-        <p id="p-proy" class="subtitle">PROYECTO PRINCIPAL: —</p>
+        <h1>PLANILLA DE MOVILIDAD</h1>
+        <p class="sub">PROYECTO PRINCIPAL: <span id="proydef">—</span></p>
       </div>
       <div class="card-b">
         <div class="grid">
           <div class="group">
-            <label for="f-emision">Fecha de Emisión</label>
+            <label>Fecha de Emisión</label>
             <input id="f-emision" type="date">
           </div>
-          <div class="worker-row">
-            <div class="group" style="flex:1">
-              <label for="sel-trabajador">Trabajador Seleccionado</label>
-              <select id="sel-trabajador"></select>
-            </div>
-            <button id="btn-new-worker" class="btn ghost small" title="Nuevo trabajador">+</button>
-            <button id="btn-edit-worker" class="btn ghost small" title="Editar trabajador">✎</button>
+          <div class="group">
+            <label>Trabajador Seleccionado</label>
+            <select id="sel-trabajador"></select>
           </div>
         </div>
       </div>
 
       <div class="list">
-        <div class="thead">
-          <span>#</span><span>Destino</span><span>Motivo</span><span>Proyecto</span><span>PC</span><span>Monto (S/)</span>
-        </div>
+        <div class="thead"><span>#</span><span>Destino</span><span>Motivo</span><span>Proyecto</span><span>PC</span><span>Monto (S/)</span></div>
         <div id="rows"></div>
       </div>
 
-      <div id="over-alert" class="alert">Has superado el tope de <b>S/ 45</b> por día/usuario. Ajusta los montos o cambia la fecha.</div>
+      <div id="over" class="alert"></div>
 
       <div class="total">
-        <span class="pill">Tope por día: <b>S/ 45.00</b></span>
-        <span class="pill">Acumulado día: <b id="pill-acum">S/ 0.00</b></span>
-        <span class="pill">Disponible: <b id="pill-disp">S/ 45.00</b></span>
+        <span class="pill">Tope por día: <b id="tTope">S/ 45.00</b></span>
+        <span class="pill">Acumulado día: <b id="tAcum">S/ 0.00</b></span>
+        <span class="pill">Disponible: <b id="tDisp">S/ 45.00</b></span>
         <span style="font-weight:800">Total:</span>
-        <span id="total" class="amount ok">S/ 0.00</span>
-      </div>
-
-      <div class="legal">
-        <b>Base Legal:</b> Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del artículo 21° del Reglamento de la ley del Impuesto a la Renta. Nota: La falta de consignación de la fecha en que se incurrió en el gasto, nombres y apellidos de cada trabajador, número de DNI, motivo y destino del desplazamiento y monto gastado, respecto a cada desplazamiento sólo inhabilita la planilla para la sustentación del gasto que corresponda a tal desplazamiento. (*) Numeración de la planilla.
+        <span id="tTotal" class="amount ok">S/ 0.00</span>
       </div>
     </div>
-    <button id="btn-save" class="btn primary">Finalizar, Guardar y Exportar a PDF</button>
+
+    <div style="display:flex;gap:8px">
+      <button id="btnAdd" class="btn">+ Agregar fila</button>
+      <button id="btnSave" class="btn primary">Finalizar, Guardar y Exportar a PDF</button>
+    </div>
+    <div style="height:8px"></div>
   </div>
 
   <!-- HISTORIAL -->
   <div id="view-hist" class="view">
     <div class="card">
       <div class="card-h" style="display:flex;justify-content:space-between;align-items:center">
-        <b>Historial de Planillas</b>
-        <div id="hist-admin-actions" style="display:none;gap:8px">
-          <button class="btn ghost" id="btn-hist-edit">Editar historial</button>
-          <button class="btn primary" id="hist-save" style="display:none">Guardar cambios</button>
-          <button class="btn danger" id="hist-del" style="display:none">Eliminar seleccionados</button>
+        <b>Historial</b>
+        <div>
+          <button id="btnHistMine" class="btn">Mi historial</button>
+          <button id="btnHistAll" class="btn" title="Requiere PIN admin">Todos (admin)</button>
         </div>
       </div>
-      <div class="card-b"><div class="table-wrap"><div id="hist"></div></div></div>
-    </div>
-  </div>
-
-  <!-- AJUSTES (ADMIN) -->
-  <div id="view-admin" class="view">
-    <div class="card">
-      <div class="card-h"><b>Acceso administrador</b></div>
-      <div class="card-b" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input id="pin-in" type="password" placeholder="PIN admin (por defecto: 1234)" style="max-width:220px">
-        <button class="btn primary" id="btn-admin-pin">Ingresar</button>
-        <span id="pin-ok" style="color:#059669;font-weight:700"></span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-h"><b>Empresas</b></div>
       <div class="card-b">
-        <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button id="emp-add" class="btn ghost" disabled>Agregar empresa</button>
-          <button id="emp-save" class="btn primary" disabled>Guardar cambios</button>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Serie</th><th>#</th><th>Total</th><th>Items</th></tr></thead>
+            <tbody id="hist"></tbody>
+          </table>
         </div>
-        <div class="table-wrap"><div id="emp-table"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN -->
+  <div id="view-adm" class="view">
+    <div class="card">
+      <div class="card-h"><b>Validar PIN admin</b></div>
+      <div class="card-b" style="display:flex;gap:8px;align-items:center">
+        <input id="pin" type="password" placeholder="PIN (ADMIN_PIN)"><button id="btnPin" class="btn primary">Ingresar</button>
+        <span id="pinOk" style="color:#059669;font-weight:700"></span>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-h"><b>Usuarios</b></div>
-      <div class="card-b">
-        <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button id="usr-add" class="btn ghost" disabled>Agregar usuario</button>
-          <button id="usr-del" class="btn danger" disabled>Eliminar seleccionados</button>
-          <button id="usr-save" class="btn primary" disabled>Guardar cambios</button>
+      <div class="card-h"><b>Empresas</b>
+        <div style="float:right;display:flex;gap:8px">
+          <button id="empSave" class="btn primary" disabled>Guardar</button>
         </div>
-        <div class="table-wrap"><div id="usr-table"></div></div>
       </div>
+      <div class="card-b"><div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Razon</th><th>RUC</th><th>Direccion</th><th>Telefono</th></tr></thead>
+        <tbody id="empTable"></tbody>
+      </table></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><b>Usuarios</b>
+        <div style="float:right;display:flex;gap:8px">
+          <button id="usrSave" class="btn primary" disabled>Guardar</button>
+        </div>
+      </div>
+      <div class="card-b"><div class="table-wrap"><table>
+        <thead><tr><th>Email</th><th>DNI</th><th>Nombres</th><th>Apellidos</th><th>Rol</th><th>Activo</th><th>Empresa</th><th>ProyDef</th><th>Proys (coma)</th></tr></thead>
+        <tbody id="usrTable"></tbody>
+      </table></div></div>
     </div>
   </div>
 
-  <!-- MODAL Trabajador -->
-  <div id="modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000">
-    <div style="background:#fff;border-radius:16px;padding:18px;min-width:340px;max-width:560px">
-      <h3 id="m-title" style="margin:0 0 10px">Trabajador</h3>
-      <div class="grid">
-        <div class="group"><label>Nombres</label><input id="m-nombres" class="uppercase"></div>
-        <div class="group"><label>Apellidos</label><input id="m-apellidos" class="uppercase"></div>
-      </div>
-      <div class="grid" style="margin-top:8px">
-        <div class="group"><label>DNI</label><input id="m-dni" maxlength="8"></div>
-        <div class="group"><label>Empresa</label><select id="m-empresa"></select></div>
-      </div>
-      <div class="grid" style="margin-top:8px">
-        <div class="group"><label>Rol</label>
-          <select id="m-rol">
-            <option value="ADMIN_PADOVA">ADMIN_PADOVA</option>
-            <option value="USUARIO">USUARIO</option>
-          </select>
-        </div>
-        <div class="group"><label>Proyecto por defecto</label><input id="m-proydef" class="uppercase"></div>
-      </div>
-      <div class="group" style="margin-top:8px">
-        <label>Proyectos permitidos (coma)</label>
-        <textarea id="m-proys" rows="2" class="uppercase" placeholder="ADMIN PADOVA, LITORAL 900, SANTA BEATRIZ"></textarea>
-      </div>
-      <div class="group" style="margin-top:8px">
-        <label>Email (para login)</label>
-        <input id="m-email" type="email" placeholder="usuario@tuempresa.com"/>
-      </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
-        <button class="btn ghost" id="btn-modal-cancel">Cancelar</button>
-        <button class="btn primary" id="btn-modal-save">Guardar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- LOGIN OVERLAY -->
-  <div id="login-overlay" class="login-overlay" style="display:flex">
-    <div class="login-card">
+  <!-- LOGIN -->
+  <div id="login" class="login">
+    <div class="box">
       <h3>Iniciar sesión</h3>
-      <div id="login-local">
-        <div class="group"><label>Email</label><input id="local-email" type="email" placeholder="admin@empresa.com"></div>
-        <div class="group" style="margin-top:8px"><label>Clave</label><input id="local-pass" type="password" placeholder="******"></div>
-        <div class="hint">Se valida contra la tabla <b>usuarios</b>. La clave no se evalúa.</div>
-        <div class="login-actions">
-          <button class="btn primary" id="btn-local-login">Entrar</button>
-        </div>
-      </div>
+      <div class="group"><label>Email</label><input id="loginEmail" type="email" placeholder="admin@empresa.com"></div>
+      <div class="group"><label>Clave</label><input id="loginPass" type="password" placeholder="******"></div>
+      <div style="font-size:.85rem;color:#64748b;margin-top:6px">Se valida contra la tabla <b>usuarios</b>. La clave no se evalúa.</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button id="btnLogin" class="btn primary">Entrar</button></div>
     </div>
   </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
 <script>
-/* =================== Estado global =================== */
-window.SESSION = window.SESSION || {};            // { email }
-window.CURRENT_USER = window.CURRENT_USER || null; // objeto usuario logueado/seleccionado
-const STATE = { empresas: [], usuarios: [] };
+/* ===== Estado global ===== */
+const state = {
+  empresas: [],
+  usuarios: [],
+  user: null,
+  tope: 45,
+  pin: ''
+};
 
-/* =================== Helpers =================== */
-const qs  = s => document.querySelector(s);
+/* ===== Utils ===== */
+const qs = s => document.querySelector(s);
 const qsa = s => Array.from(document.querySelectorAll(s));
-
-function toMoney(v){
+const money = n => 'S/ ' + Number(n||0).toFixed(2);
+const toNum = v => {
   if (v==null) return 0;
-  let s = String(v).trim();
-  s = s.replace(/,/g,'.').replace(/[^0-9.\-]/g,'');
-  const parts=s.split('.');
-  if(parts.length>2){ const last=parts.pop(); s=parts.join('')+'.'+last; }
-  const n = parseFloat(s);
-  return Number.isFinite(n)?Number(n.toFixed(2)):0;
-}
-
+  let s = String(v).trim().replace(/,/g,'.').replace(/[^0-9.\-]/g,'');
+  const p=s.split('.'); if(p.length>2){const l=p.pop(); s=p.join('')+'.'+l;}
+  const n = parseFloat(s); return Number.isFinite(n)?Number(n.toFixed(2)):0;
+};
 async function api(path, opt={}){
-  const r = await fetch(path, {
-    headers: { 'Content-Type':'application/json' },
-    credentials: 'same-origin',
-    ...opt
+  const r = await fetch(path, { headers:{'Content-Type':'application/json'}, credentials:'same-origin', ...opt });
+  let d=null; try{ d=await r.json(); }catch{}
+  if(!r.ok) throw new Error((d&&d.msg)||('HTTP '+r.status));
+  return d;
+}
+
+/* ===== Login ===== */
+function openLogin(){ qs('#login').style.display='flex'; }
+function closeLogin(){ qs('#login').style.display='none'; }
+
+async function doLogin(email){
+  const u = await api('/api/login?email='+encodeURIComponent(email));
+  if (!u.activo) throw new Error('Usuario inactivo');
+  state.user = u;
+  localStorage.setItem('planilla_email', u.email);
+  renderHeader();
+  fillTrabajadores();
+  renderRows(true);
+  qs('#btnOpenLogin').style.display='none';
+  qs('#btnLogout').style.display='';
+  closeLogin();
+}
+
+/* ===== Datos base ===== */
+async function loadBase(){
+  try {
+    const ping = await api('/api/ping');
+    state.tope = Number(ping.tope || 45);
+    qs('#tTope').textContent = money(state.tope);
+    qs('#tDisp').textContent = money(state.tope);
+  } catch {}
+
+  state.empresas = await api('/api/empresas');
+  state.usuarios = await api('/api/usuarios');
+
+  let email = localStorage.getItem('planilla_email') || '';
+  if (email) {
+    try { await doLogin(email); return; } catch {}
+  }
+  openLogin();
+}
+
+/* ===== UI cabecera & trabajador ===== */
+function renderHeader(){
+  const u = state.user;
+  const who = u ? `Conectado: ${u.nombres} ${u.apellidos} — ${u.email} — Rol: ${u.rol}` : 'No autenticado';
+  qs('#who').textContent = who;
+
+  const emp = state.empresas.find(e => e.id === (u?.empresaid || ''));
+  qs('#emp-razon').textContent = emp?.razon || '—';
+  qs('#emp-ruc').textContent = emp?.ruc || '—';
+  qs('#proydef').textContent = (u?.proydef || '—').toUpperCase();
+  if (emp?.logo) {
+    const img = qs('#logo'); img.src = emp.logo; img.style.display='inline-block';
+  }
+
+  // admin tab visible sólo si rol = ADMIN_PADOVA
+  qs('#tabAdmin').style.display = (u?.rol === 'ADMIN_PADOVA') ? '' : 'none';
+}
+function fillTrabajadores(){
+  const sel = qs('#sel-trabajador'); sel.innerHTML='';
+  state.usuarios.filter(u => u.activo).forEach(u=>{
+    const o = document.createElement('option');
+    o.value = u.email; o.textContent = `${u.nombres} ${u.apellidos}`;
+    if (state.user && u.email.toLowerCase() === state.user.email.toLowerCase()) o.selected = true;
+    sel.appendChild(o);
   });
-  let data=null; try{ data=await r.json(); }catch{}
-  if(!r.ok){
-    const msg = (data&&(data.msg||data.error)) || `HTTP ${r.status}`;
-    throw { ...data, status:r.status, msg };
-  }
-  return data;
-}
-
-/* =================== Login (UI + sesión) =================== */
-function findLoginEls(){
-  const modal = qs('#login-overlay') || qs('#modal-login') || qs('.modal-login') || qs('[data-modal="login"]') || qs('[aria-label="Iniciar sesión"]') || null;
-  const email = qs('#local-email') || qs('#login-email') || (modal?modal.querySelector('input[type="email"]'):null) || qs('input[type="email"]');
-  const pass  = qs('#local-pass')  || qs('#login-pass')  || (modal?modal.querySelector('input[type="password"]'):null) || qs('input[type="password"]');
-  const btn   = qs('#btn-local-login') || qs('#btn-login')   || (modal?modal.querySelector('button, input[type="submit"]'):null) || null;
-  return { modal, email, pass, btn };
-}
-
-function showLoginModal(){
-  const { modal } = findLoginEls();
-  if (modal){ modal.style.display = ''; modal.removeAttribute('aria-hidden'); }
-}
-function hideLoginModal(){
-  const { modal } = findLoginEls();
-  if (modal){ modal.style.display = 'none'; modal.setAttribute('aria-hidden','true'); }
-}
-
-async function doLoginWithEmail(email){
-  const u = await api('/api/login?email=' + encodeURIComponent(String(email||'').trim()));
-  if (!u || !u.activo) throw new Error('Usuario inexistente o inactivo');
-  window.SESSION.email = u.email;
-  window.CURRENT_USER  = u;
-  try{ localStorage.setItem('planilla_email', u.email); }catch{}
-  hideLoginModal();
-  await cargarEmpresasYUsuarios(true); // true = post-login
-}
-
-function wireLoginUI(){
-  const { email, pass, btn } = findLoginEls();
-  if (!btn) return;
-  btn.addEventListener('click', async (ev)=>{
-    ev.preventDefault();
-    try{
-      const em = (email && email.value) ? email.value.trim() : '';
-      if(!em){ alert('Ingrese el email.'); return; }
-      await doLoginWithEmail(em);
-    }catch(e){
-      console.error('Login error:', e);
-      alert(e?.msg || e?.message || 'No se pudo iniciar sesión.');
-    }
-  });
-}
-
-/* =================== Carga base (empresas/usuarios) =================== */
-async function cargarEmpresasYUsuarios(isPostLogin=false){
-  try{ STATE.empresas = await api('/api/empresas?simple=1'); }
-  catch{ STATE.empresas = await api('/api/empresas'); }
-
-  STATE.usuarios = await api('/api/usuarios');
-
-  let email = window.SESSION.email;
-  if (!email){
-    try{ email = localStorage.getItem('planilla_email') || ''; }catch{}
-  }
-  if (!email && !isPostLogin) email = 'admin@empresa.com';
-
-  if (email){
-    try{
-      const u = await api('/api/login?email=' + encodeURIComponent(email));
-      if (u){ window.CURRENT_USER = u; window.SESSION.email = u.email; }
-    }catch(_){}
-  }
-  if (!window.CURRENT_USER){
-    const u = STATE.usuarios.find(x=>x.activo) || STATE.usuarios[0] || null;
-    window.CURRENT_USER = u || null;
-  }
-
-  renderEmpresaHeader();
-  llenarTrabajadores();
-
-  if (typeof window.onTrabajadorChange === 'function') window.onTrabajadorChange();
-  if (typeof window.renderRows === 'function') window.renderRows();
-}
-
-/* =================== Header empresa =================== */
-function renderEmpresaHeader(){
-  const empId = window.CURRENT_USER?.empresaid || '';
-  const emp = STATE.empresas.find(e => e.id === empId);
-  const razon = emp ? emp.razon : '—';
-  const ruc   = emp ? emp.ruc   : '—';
-
-  qsa('.emp-razon,#razon').forEach(el => el.textContent = razon);
-  qsa('.emp-ruc,#ruc').forEach(el => el.textContent = ruc);
-}
-
-/* =================== Selector de trabajador =================== */
-function llenarTrabajadores(){
-  const sel = qs('#sel-trabajador') || qs('select[name="trabajador"]');
-  if (!sel) return;
-
-  sel.innerHTML = '';
-  STATE.usuarios.filter(u=>u.activo).forEach(u=>{
-    const opt = document.createElement('option');
-    opt.value = u.email;
-    opt.textContent = `${u.nombres} ${u.apellidos}`;
-    if (window.CURRENT_USER && u.email.toLowerCase()===window.CURRENT_USER.email.toLowerCase()) opt.selected = true;
-    sel.appendChild(opt);
-  });
-
-  sel.onchange = ()=>{
-    const email = sel.value;
-    const u = STATE.usuarios.find(x=>x.email.toLowerCase()===email.toLowerCase());
-    if (u){
-      window.CURRENT_USER = u;
-      window.SESSION.email = u.email;
-      try{ localStorage.setItem('planilla_email', u.email); }catch{}
-      renderEmpresaHeader();
-      if (typeof window.onTrabajadorChange === 'function') window.onTrabajadorChange();
-    }
+  sel.onchange = async () => {
+    const em = sel.value;
+    const u = state.usuarios.find(x => x.email.toLowerCase() === em.toLowerCase());
+    if (u){ state.user = u; localStorage.setItem('planilla_email', u.email); renderHeader(); recalc(); }
   };
 }
 
-/* =================== Guardar + PDF =================== */
-async function guardarPlanilla(){
-  if (!window.CURRENT_USER){ alert('Seleccione un trabajador.'); return; }
+/* ===== Filas ===== */
+function rowTpl(i){
+  return `
+    <div class="row">
+      <div style="text-align:center;font-weight:700">${i+1}</div>
+      <input class="destino" placeholder="DESTINO">
+      <input class="motivo" placeholder="MOTIVO">
+      <input class="proyecto" placeholder="PROYECTO" value="${(state.user?.proydef||'').toUpperCase()}">
+      <input class="pc" placeholder="94303">
+      <input class="monto" placeholder="0.00">
+    </div>
+  `;
+}
+function renderRows(first=false){
+  const cont = qs('#rows');
+  if (first || !cont.children.length){
+    cont.innerHTML = '';
+    for (let i=0;i<5;i++) cont.insertAdjacentHTML('beforeend', rowTpl(i));
+  }
+  qsa('#rows .monto, #rows .destino, #rows .motivo, #rows .proyecto, #rows .pc')
+    .forEach(el => el.addEventListener('input', recalc));
+}
+function addRow(){
+  const cont = qs('#rows');
+  cont.insertAdjacentHTML('beforeend', rowTpl(cont.children.length));
+  renderRows();
+}
 
-  const fecha = qs('#f-emision')?.value || '';
-  const items = [];
-  qsa('.trow').forEach(r=>{
-    const destino  = (r.querySelector('.destino') ?.value||'').trim().toUpperCase();
-    const motivo   = (r.querySelector('.motivo')  ?.value||'').trim().toUpperCase();
+/* ===== Totales / tope ===== */
+async function recalc(){
+  const items = getItems();
+  const total = Number(items.reduce((a,x)=>a+Number(x.monto||0),0).toFixed(2));
+  qs('#tTotal').textContent = money(total);
+  qs('#tTotal').className = 'amount ' + (total>state.tope ? 'bad' : 'ok');
+
+  const fecha = qs('#f-emision').value || new Date().toISOString().slice(0,10);
+  if (state.user?.dni && fecha){
+    try {
+      const r = await api(`/api/acumulado?dni=${encodeURIComponent(state.user.dni)}&fecha=${encodeURIComponent(fecha)}`);
+      qs('#tAcum').textContent = money(r.acc);
+      const disp = Math.max(0, Number(state.tope) - Number(r.acc));
+      qs('#tDisp').textContent = money(disp);
+      const over = qs('#over');
+      if (total > disp){
+        over.style.display='block';
+        over.textContent = `Has superado el tope disponible de ${money(disp)} para la fecha seleccionada.`;
+      } else {
+        over.style.display='none'; over.textContent='';
+      }
+    } catch {}
+  }
+}
+function getItems(){
+  const rows = qsa('#rows .row');
+  const out = [];
+  rows.forEach(r=>{
+    const destino  = (r.querySelector('.destino')?.value||'').trim().toUpperCase();
+    const motivo   = (r.querySelector('.motivo')?.value||'').trim().toUpperCase();
     const proyecto = (r.querySelector('.proyecto')?.value||'').trim().toUpperCase();
-    const pc       = (r.querySelector('.pc')      ?.value||'').trim();
-    const monto    = toMoney(r.querySelector('.monto')?.value);
-    if (monto>0) items.push({ destino, motivo, proyecto, pc, monto });
+    const pc       = (r.querySelector('.pc')?.value||'').trim();
+    const monto    = toNum(r.querySelector('.monto')?.value);
+    if (monto>0) out.push({ destino, motivo, proyecto, pc, monto });
   });
-  if (!items.length){ alert('Ingrese al menos un ítem con monto.'); return; }
+  return out;
+}
 
-  const btn = qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar');
-  if (btn) btn.disabled = true;
-
+/* ===== Guardar + PDF ===== */
+async function savePlanilla(){
+  if (!state.user) { openLogin(); return; }
+  const fecha = qs('#f-emision').value || new Date().toISOString().slice(0,10);
+  const items = getItems();
+  if (!items.length) { alert('Ingrese al menos un ítem con monto.'); return; }
+  qs('#btnSave').disabled = true;
   try{
-    const res = await api('/api/planillas', {
+    const r = await api('/api/planillas', {
       method:'POST',
       body: JSON.stringify({
-        dni: window.CURRENT_USER.dni,
-        email: (window.SESSION?.email || window.CURRENT_USER.email),
+        dni: state.user.dni,
+        email: state.user.email,
         fecha, items
       })
     });
-
-    await renderPDF({
-      fecha: res.fecha || fecha,
-      items,
-      total: res.total,
-      serie: res.serie,
-      num:   res.num,
-      emp:   res.empresa,
-      u:     window.CURRENT_USER
+    await exportPDF({
+      fecha, items,
+      total: r.total, serie: r.serie, num: r.num,
+      emp: r.empresa, u: state.user
     });
-
-    alert(`Planilla ${res.serie}-${res.num} guardada y exportada.`);
-    if (typeof window.renderHistorial === 'function') window.renderHistorial();
-
+    alert(`Planilla ${r.serie}-${String(r.num).padStart(5,'0')} guardada y exportada.`);
+    loadHistMine(); // refresca historial
   }catch(e){
-    alert(e?.msg || e?.error || 'Error al guardar.');
-    console.error('Guardar planilla - error:', e);
-  }finally{
-    if (btn) btn.disabled = false;
-  }
+    alert(e.message||'Error al guardar');
+  }finally{ qs('#btnSave').disabled = false; }
 }
-
-/* =================== PDF (jsPDF) =================== */
-async function renderPDF({ fecha, items, total, serie, num, emp, u }){
-  const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
-  if (!jsPDFCtor) throw new Error('No se pudo cargar jsPDF');
-
-  const doc = new jsPDFCtor({ unit:'pt', format:'a4' });
-  const razon = (emp&&emp.razon)||'PADOVA';
-  const ruc   = (emp&&emp.ruc)||'—';
-
-  doc.setFontSize(12);
-  doc.text(razon, 40, 40);
-  doc.text(`R.U.C.: ${ruc}`, 40, 58);
-  doc.setFontSize(14);
-  doc.text('PLANILLA DE MOVILIDAD', 300, 40, { align:'center' });
-  doc.text(`Planilla Nro. ${serie}-${num}`, 300, 58, { align:'center' });
-
-  doc.setFontSize(10);
-  const trabajador = `${(u?.nombres||'').toUpperCase()} ${(u?.apellidos||'').toUpperCase()}  DNI: ${u?.dni||''}`;
-  doc.text(`Fecha de Emisión: ${fecha}`, 40, 90);
-  doc.text(`Trabajador: ${trabajador}`, 40, 108);
-
-  let y=140;
-  const cols=['#','DESTINO','MOTIVO','PROYECTO','PC','MONTO (S/)'];
-  const w=[24,120,120,140,60,80];
-  const row=(c,yy,h=false)=>{ let x=40; for(let i=0;i<c.length;i++){ doc.rect(x,yy,w[i],22); doc.setFontSize(h?10:9); doc.text(String(c[i]??''),x+3,yy+14); x+=w[i]; } };
-
-  row(cols,y,true); y+=22;
-  items.forEach((it,ix)=>{ if(y>760){ doc.addPage(); y=40; }
-    row([ix+1,(it.destino||'').toUpperCase(),(it.motivo||'').toUpperCase(),(it.proyecto||'').toUpperCase(),(it.pc||''), Number(it.monto||0).toFixed(2)], y);
-    y+=22;
-  });
-
-  y+=10; doc.setFontSize(12);
-  doc.text(`Total: S/ ${Number(total||0).toFixed(2)}`, 40, y+20);
-  doc.save(`${serie}-${num}.pdf`);
-}
-
-/* =================== Arranque =================== */
-window.addEventListener('DOMContentLoaded', async ()=>{
-  try{
-    if (!window.SESSION.email){
-      try{ window.SESSION.email = localStorage.getItem('planilla_email') || ''; }catch{}
-    }
-    if (!window.SESSION.email) window.SESSION.email = 'admin@empresa.com';
-
-    wireLoginUI();
-    await cargarEmpresasYUsuarios();
-
-    const btn = qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar');
-    if (btn) btn.addEventListener('click', guardarPlanilla);
-
-    if (window.CURRENT_USER && window.SESSION.email) hideLoginModal();
-
-  }catch(e){
-    console.error('Boot UI error:', e);
-    alert('No se pudo cargar datos base.');
-    showLoginModal();
-  }
-});
-</script>
-<script>
-/* =========================
-   HOTFIX ACCESO (auto-login)
-   ========================= */
-(async () => {
-  // 1) Si ya hay sesión válida, no hacemos nada
-  try {
-    if (!window.SESSION) window.SESSION = {};
-    if (window.SESSION.email) {
-      // Forzar ocultar modal si quedó abierto
-      ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay']
-        .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display='none'; el.setAttribute('aria-hidden','true'); }));
-      return;
-    }
-  } catch (_) {}
-
-  // 2) Intentar recuperar email previo almacenado
-  let email = '';
-  try { email = localStorage.getItem('planilla_email') || ''; } catch (_) {}
-
-  // 3) Fallback a admin si no hay sesión previa
-  if (!email) email = 'admin@empresa.com';
-
-  // 4) Login contra la API
-  try {
-    const r = await fetch('/api/login?email=' + encodeURIComponent(email), { credentials: 'same-origin' });
-    const u = await r.json();
-
-    if (u && u.email && (u.activo === true || u.activo === '1')) {
-      // Guardar sesión en memoria y storage
-      window.SESSION = { email: u.email };
-      window.CURRENT_USER = u;
-      try { localStorage.setItem('planilla_email', u.email); } catch (_) {}
-
-      // 5) Ocultar/cerrar cualquier modal/overlay de login conocido
-      const killers = ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay','.backdrop','.dialog','[role="dialog"]'];
-      killers.forEach(sel => document.querySelectorAll(sel).forEach(el => el.remove()));
-
-      // 6) Continuar boot de la UI si existe la función
-      if (typeof window.cargarEmpresasYUsuarios === 'function') {
-        await window.cargarEmpresasYUsuarios(true);
-      } else {
-        // Render mínimo de cabecera si no existe la función
-        const razonEls = document.querySelectorAll('.emp-razon,#razon');
-        const rucEls   = document.querySelectorAll('.emp-ruc,#ruc');
-        (razonEls||[]).forEach(el => el.textContent = (u.empresaid || '—'));
-        (rucEls||[]).forEach(el => el.textContent   = '');
-      }
-    } else {
-      // No hay usuario/está inactivo: mostrar modal (si existe)
-      ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay']
-        .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display=''; el.removeAttribute('aria-hidden'); }));
-      console.warn('Auto-login: usuario no activo o no encontrado:', email);
-    }
-  } catch (e) {
-    console.error('Auto-login falló:', e);
-    // Mostrar modal (si existe) para que intentes manualmente
-    ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay']
-      .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display=''; el.removeAttribute('aria-hidden'); }));
-  }
-})();
-</script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script>
-window.SESSION = window.SESSION || {};
-window.CURRENT_USER = window.CURRENT_USER || null;
-const STATE = { empresas: [], usuarios: [] };
-
-const qs = s => document.querySelector(s);
-const qsa = s => Array.from(document.querySelectorAll(s));
-function toMoney(v){ if(v==null) return 0; let s=String(v).trim().replace(/,/g,'.').replace(/[^0-9.\-]/g,''); const p=s.split('.'); if(p.length>2){const l=p.pop(); s=p.join('')+'.'+l;} const n=parseFloat(s); return Number.isFinite(n)?Number(n.toFixed(2)):0; }
-async function api(path,opt={}){ const r=await fetch(path,{headers:{'Content-Type':'application/json'},credentials:'same-origin',...opt}); let d=null; try{d=await r.json();}catch{} if(!r.ok){throw {...d,status:r.status,msg:(d&&(d.msg||d.error))||('HTTP '+r.status)};} return d; }
-
-function findLoginEls(){ const modal=qs('#modal-login')||qs('.modal-login')||qs('[data-modal="login"]')||qs('[aria-label="Iniciar sesión"]')||null; const email=qs('#login-email')||(modal?modal.querySelector('input[type="email"]'):null)||qs('input[type="email"]'); const pass=qs('#login-pass')||(modal?modal.querySelector('input[type="password"]'):null)||qs('input[type="password"]'); const btn=qs('#btn-login')||(modal?modal.querySelector('button, input[type="submit"]'):null)||null; return {modal,email,pass,btn}; }
-function showLogin(){ const {modal}=findLoginEls(); if(modal){ modal.style.display=''; modal.removeAttribute('aria-hidden'); } }
-function hideLogin(){ const {modal}=findLoginEls(); if(modal){ modal.style.display='none'; modal.setAttribute('aria-hidden','true'); } }
-
-async function doLogin(email){
-  const u = await api('/api/login?email='+encodeURIComponent(String(email||'').trim()));
-  if(!u || !u.activo) throw new Error('Usuario inexistente o inactivo');
-  window.SESSION.email = u.email; window.CURRENT_USER = u;
-  try{ localStorage.setItem('planilla_email', u.email); }catch{}
-  hideLogin(); await cargarEmpresasYUsuarios(true);
-}
-
-function wireLogin(){
-  const {email,btn} = findLoginEls(); if(!btn) return;
-  btn.addEventListener('click', async (ev)=>{ ev.preventDefault(); try{
-    const em = (email && email.value) ? email.value.trim() : '';
-    if(!em){ alert('Ingrese el email'); return; }
-    await doLogin(em);
-  }catch(e){ console.error(e); alert(e?.msg||e?.message||'No se pudo iniciar sesión'); }});
-}
-
-async function cargarEmpresasYUsuarios(post=false){
-  try{ STATE.empresas = await api('/api/empresas?simple=1'); }
-  catch{ STATE.empresas = await api('/api/empresas'); }
-
-  STATE.usuarios = await api('/api/usuarios');
-
-  let email = window.SESSION.email;
-  if(!email && !post){ try{ email = localStorage.getItem('planilla_email')||''; }catch{} }
-  if(!email && !post) email='admin@empresa.com';
-
-  if(email){ try{ const u=await api('/api/login?email='+encodeURIComponent(email)); if(u){window.CURRENT_USER=u; window.SESSION.email=u.email;} }catch{} }
-  if(!window.CURRENT_USER){ const u=STATE.usuarios.find(x=>x.activo)||STATE.usuarios[0]||null; window.CURRENT_USER=u; }
-
-  renderEmpresaHeader(); llenarTrabajadores();
-  if(typeof window.onTrabajadorChange==='function') window.onTrabajadorChange();
-  if(typeof window.renderRows==='function') window.renderRows();
-}
-
-function renderEmpresaHeader(){
-  const emp = STATE.empresas.find(e=>e.id===(window.CURRENT_USER?.empresaid||'')); const razon = emp?emp.razon:'—'; const ruc = emp?emp.ruc:'—';
-  qsa('.emp-razon,#razon').forEach(el=> el.textContent=razon);
-  qsa('.emp-ruc,#ruc').forEach(el=> el.textContent=ruc);
-}
-
-function llenarTrabajadores(){
-  const sel=qs('#sel-trabajador')||qs('select[name="trabajador"]'); if(!sel) return;
-  sel.innerHTML=''; STATE.usuarios.filter(u=>u.activo).forEach(u=>{ const o=document.createElement('option'); o.value=u.email; o.textContent=`${u.nombres} ${u.apellidos}`; if(window.CURRENT_USER&&u.email.toLowerCase()===window.CURRENT_USER.email.toLowerCase()) o.selected=true; sel.appendChild(o); });
-  sel.onchange=()=>{ const email=sel.value; const u=STATE.usuarios.find(x=>x.email.toLowerCase()===email.toLowerCase()); if(u){ window.CURRENT_USER=u; window.SESSION.email=u.email; try{localStorage.setItem('planilla_email',u.email);}catch{} renderEmpresaHeader(); if(typeof window.onTrabajadorChange==='function') window.onTrabajadorChange(); }};
-}
-
-async function guardarPlanilla(){
-  if(!window.CURRENT_USER){ alert('Seleccione un trabajador'); return; }
-  const fecha = qs('#f-emision')?.value || '';
-  const items=[]; qsa('.trow').forEach(r=>{ const destino=(r.querySelector('.destino')?.value||'').trim().toUpperCase(); const motivo=(r.querySelector('.motivo')?.value||'').trim().toUpperCase(); const proyecto=(r.querySelector('.proyecto')?.value||'').trim().toUpperCase(); const pc=(r.querySelector('.pc')?.value||'').trim(); const monto=toMoney(r.querySelector('.monto')?.value); if(monto>0) items.push({destino,motivo,proyecto,pc,monto}); });
-  if(!items.length){ alert('Ingrese al menos un ítem con monto'); return; }
-  const btn = qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar'); if(btn) btn.disabled=true;
-  try{
-    const res = await api('/api/planillas',{ method:'POST', body: JSON.stringify({ dni: window.CURRENT_USER.dni, email: (window.SESSION?.email||window.CURRENT_USER.email), fecha, items })});
-    await renderPDF({ fecha:res.fecha||fecha, items, total:res.total, serie:res.serie, num:res.num, emp:res.empresa, u:window.CURRENT_USER });
-    alert(`Planilla ${res.serie}-${res.num} guardada y exportada.`);
-    if(typeof window.renderHistorial==='function') window.renderHistorial();
-  }catch(e){ alert(e?.msg||e?.error||'Error al guardar.'); console.error(e); }
-  finally{ if(btn) btn.disabled=false; }
-}
-
-async function renderPDF({ fecha, items, total, serie, num, emp, u }){
-  const jsPDFCtor=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF; if(!jsPDFCtor) throw new Error('No se pudo cargar jsPDF');
+async function exportPDF({ fecha, items, total, serie, num, emp, u }){
+  const jsPDFCtor=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF; if(!jsPDFCtor) throw new Error('jsPDF no disponible');
   const doc=new jsPDFCtor({unit:'pt',format:'a4'});
-  const razon=(emp&&emp.razon)||'PADOVA', ruc=(emp&&emp.ruc)||'—';
-  doc.setFontSize(12); doc.text(razon,40,40); doc.text(`R.U.C.: ${ruc}`,40,58);
-  doc.setFontSize(14); doc.text('PLANILLA DE MOVILIDAD',300,40,{align:'center'}); doc.text(`Planilla Nro. ${serie}-${num}`,300,58,{align:'center'});
+  const razon=emp?.razon||'PADOVA', ruc=emp?.ruc||'—';
+  doc.setFontSize(12); doc.text(razon,40,40); doc.text('R.U.C.: '+ruc,40,58);
+  doc.setFontSize(14); doc.text('PLANILLA DE MOVILIDAD',300,40,{align:'center'}); doc.text(`Planilla Nro. ${serie}-${String(num).padStart(5,'0')}`,300,58,{align:'center'});
   doc.setFontSize(10); const trabajador=`${(u?.nombres||'').toUpperCase()} ${(u?.apellidos||'').toUpperCase()}  DNI: ${u?.dni||''}`;
-  doc.text(`Fecha de Emisión: ${fecha}`,40,90); doc.text(`Trabajador: ${trabajador}`,40,108);
+  doc.text('Fecha de Emisión: '+fecha,40,90); doc.text('Trabajador: '+trabajador,40,108);
   let y=140; const cols=['#','DESTINO','MOTIVO','PROYECTO','PC','MONTO (S/)'], w=[24,120,120,140,60,80];
-  const row=(c,yy,h=false)=>{ let x=40; for(let i=0;i<c.length;i++){ doc.rect(x,yy,w[i],22); doc.setFontSize(h?10:9); doc.text(String(c[i]??''),x+3,yy+14); x+=w[i]; } };
+  const row=(c,yy,h)=>{let x=40; for(let i=0;i<c.length;i++){doc.rect(x,yy,w[i],22); doc.setFontSize(h?10:9); doc.text(String(c[i]??''),x+3,yy+14); x+=w[i];}};
   row(cols,y,true); y+=22;
-  items.forEach((it,ix)=>{ if(y>760){ doc.addPage(); y=40; } row([ix+1,(it.destino||'').toUpperCase(),(it.motivo||'').toUpperCase(),(it.proyecto||'').toUpperCase(),(it.pc||''),Number(it.monto||0).toFixed(2)],y); y+=22; });
-  y+=10; doc.setFontSize(12); doc.text(`Total: S/ ${Number(total||0).toFixed(2)}`,40,y+20);
-  doc.save(`${serie}-${num}.pdf`);
+  items.forEach((it,i)=>{ if(y>760){doc.addPage(); y=40;} row([i+1,it.destino,it.motivo,it.proyecto,it.pc,Number(it.monto).toFixed(2)],y); y+=22; });
+  y+=10; doc.setFontSize(12); doc.text('Total: '+money(total),40,y+20);
+  doc.save(`${serie}-${String(num).padStart(5,'0')}.pdf`);
 }
 
-window.addEventListener('DOMContentLoaded', async ()=>{
-  try{
-    if(!window.SESSION.email){ try{ window.SESSION.email = localStorage.getItem('planilla_email')||''; }catch{} }
-    if(!window.SESSION.email) window.SESSION.email='admin@empresa.com';
-    wireLogin(); await cargarEmpresasYUsuarios();
-    const btn=qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar'); if(btn) btn.addEventListener('click', guardarPlanilla);
-    if(window.CURRENT_USER && window.SESSION.email) hideLogin();
-  }catch(e){ console.error('Boot UI error:', e); alert('No se pudo cargar datos base.'); showLogin(); }
+/* ===== Historial ===== */
+function renderHist(rows){
+  const tb = qs('#hist'); tb.innerHTML='';
+  rows.forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.fecha}</td><td>${r.serie}</td><td>${String(r.num).padStart(5,'0')}</td><td>${money(r.total)}</td><td>${(r.items||[]).length}</td>`;
+    tb.appendChild(tr);
+  });
+}
+async function loadHistMine(){
+  if (!state.user) return;
+  const rows = await api('/api/historial?email='+encodeURIComponent(state.user.email));
+  renderHist(rows);
+}
+async function loadHistAll(){
+  const pin = state.pin || prompt('PIN admin:') || '';
+  state.pin = pin;
+  const r = await fetch('/api/historial?all=1',{ headers:{'x-admin-pin':pin} });
+  if(!r.ok){ alert('PIN inválido'); return; }
+  renderHist(await r.json());
+}
+
+/* ===== Admin ===== */
+let empModel=[], usrModel=[];
+function fillEmpTable(){
+  const tb=qs('#empTable'); tb.innerHTML='';
+  empModel.forEach((e,idx)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML = `
+      <td contenteditable>${e.id}</td>
+      <td contenteditable>${e.razon||''}</td>
+      <td contenteditable>${e.ruc||''}</td>
+      <td contenteditable>${e.direccion||''}</td>
+      <td contenteditable>${e.telefono||''}</td>`;
+    tb.appendChild(tr);
+  });
+}
+function fillUsrTable(){
+  const tb=qs('#usrTable'); tb.innerHTML='';
+  usrModel.forEach(u=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td contenteditable>${u.email}</td>
+      <td contenteditable>${u.dni}</td>
+      <td contenteditable>${u.nombres}</td>
+      <td contenteditable>${u.apellidos}</td>
+      <td contenteditable>${u.rol}</td>
+      <td contenteditable>${u.activo}</td>
+      <td contenteditable>${u.empresaid||''}</td>
+      <td contenteditable>${u.proydef||''}</td>
+      <td contenteditable>${(u.proys||[]).join(', ')}</td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+async function adminEnter(){
+  const pin = qs('#pin').value.trim();
+  if (!pin) { alert('Ingresa PIN'); return; }
+  // Hacemos una llamada que requiera PIN para validar
+  const r = await fetch('/api/historial?all=1',{ headers:{'x-admin-pin':pin} });
+  if(!r.ok){ alert('PIN inválido'); return; }
+  state.pin = pin; qs('#pinOk').textContent = 'OK';
+  empModel = await api('/api/empresas'); fillEmpTable(); qs('#empSave').disabled=false;
+  usrModel = await api('/api/usuarios'); fillUsrTable(); qs('#usrSave').disabled=false;
+}
+async function adminSaveEmp(){
+  // Leer tabla editable
+  const rows = qsa('#empTable tr').map(tr=>{
+    const tds = tr.querySelectorAll('td');
+    return { id:tds[0].innerText.trim(), razon:tds[1].innerText.trim(), ruc:tds[2].innerText.trim(),
+             direccion:tds[3].innerText.trim(), telefono:tds[4].innerText.trim() };
+  });
+  const r = await fetch('/api/empresas',{ method:'PUT', headers:{'Content-Type':'application/json','x-admin-pin':state.pin}, body:JSON.stringify(rows) });
+  if(!r.ok){ alert('Error guardando empresas'); return; }
+  empModel = await r.json(); fillEmpTable(); alert('Empresas guardadas');
+}
+async function adminSaveUsr(){
+  const rows = qsa('#usrTable tr').map(tr=>{
+    const t=tr.querySelectorAll('td');
+    return {
+      email:t[0].innerText.trim(), dni:t[1].innerText.trim(), nombres:t[2].innerText.trim(), apellidos:t[3].innerText.trim(),
+      rol:t[4].innerText.trim(), activo: (String(t[5].innerText).trim().toLowerCase()!=='false'),
+      empresaid:t[6].innerText.trim(), proydef:t[7].innerText.trim(),
+      proys: t[8].innerText.split(',').map(s=>s.trim()).filter(Boolean)
+    };
+  });
+  const r = await fetch('/api/usuarios',{ method:'PUT', headers:{'Content-Type':'application/json','x-admin-pin':state.pin}, body:JSON.stringify(rows) });
+  if(!r.ok){ alert('Error guardando usuarios'); return; }
+  usrModel = await r.json(); fillUsrTable(); alert('Usuarios guardados');
+}
+
+/* ===== Tabs & eventos ===== */
+qsa('.tab').forEach(b=>{
+  b.onclick = ()=>{
+    qsa('.tab').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    qsa('.view').forEach(v=>v.classList.remove('active'));
+    qs('#view-'+b.dataset.tab).classList.add('active');
+    if (b.dataset.tab==='hist') loadHistMine();
+  };
 });
+
+qs('#btnOpenLogin').onclick = openLogin;
+qs('#btnLogin').onclick = async ()=>{
+  const e = qs('#loginEmail').value.trim() || 'admin@empresa.com';
+  try{ await doLogin(e); }catch(err){ alert(err.message||'No se pudo iniciar sesión'); }
+};
+qs('#btnLogout').onclick = ()=>{ state.user=null; localStorage.removeItem('planilla_email'); openLogin(); renderHeader(); };
+qs('#btnAdd').onclick = addRow;
+qs('#btnSave').onclick = savePlanilla;
+qs('#btnHistMine').onclick = loadHistMine;
+qs('#btnHistAll').onclick = loadHistAll;
+qs('#btnPin').onclick = adminEnter;
+qs('#empSave').onclick = adminSaveEmp;
+qs('#usrSave').onclick = adminSaveUsr;
+
+document.addEventListener('DOMContentLoaded', async ()=>{
+  await loadBase();
+  renderRows(true);
+  recalc();
+});
+</script>
+<script>
+/* ==== HOTFIX UI: filas + totales + guardar + PDF + header empresa ==== */
+(function () {
+  const $ = s => document.querySelector(s);
+  const $$ = s => Array.from(document.querySelectorAll(s));
+  const money = v => 'S/ ' + Number(v || 0).toFixed(2);
+  const toNum = v => {
+    if (v == null) return 0;
+    let s = String(v).trim().replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
+    const p = s.split('.'); if (p.length > 2) { const l = p.pop(); s = p.join('') + '.' + l; }
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
+  };
+  async function api(path, opt = {}) {
+    const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', ...opt });
+    let d = null; try { d = await r.json(); } catch {}
+    if (!r.ok) throw new Error((d && (d.msg || d.error)) || ('HTTP ' + r.status));
+    return d;
+  }
+
+  const ui = {
+    rows: $('#rows'),
+    fecha: $('#f-emision'),
+    trabajador: $('#sel-trabajador'),
+    btnSave: $('#btn-save') || $('#btnSave') || $('#btn-guardar') || $('#btn-exportar'),
+    totalTxt: $('#total') || $('#tTotal'),
+    acumTxt: $('#pill-acum') || $('#tAcum'),
+    dispTxt: $('#pill-disp') || $('#tDisp'),
+    topeTxt: $('#tTope'),
+    alert: $('#over-alert') || $('#over')
+  };
+
+  const state = { empresas: [], usuarios: [], user: null, tope: 45 };
+
+  function rowHTML(i) {
+    return `
+      <div class="trow row">
+        <div class="num" style="text-align:center;font-weight:700">${i + 1}</div>
+        <input class="destino" placeholder="DESTINO">
+        <input class="motivo" placeholder="MOTIVO">
+        <input class="proyecto" placeholder="PROYECTO">
+        <input class="pc" placeholder="94303">
+        <input class="monto" placeholder="0.00">
+      </div>`;
+  }
+  function renderRows(initial = false) {
+    if (!ui.rows) return;
+    if (initial || !ui.rows.children.length) {
+      ui.rows.innerHTML = '';
+      for (let i = 0; i < 5; i++) ui.rows.insertAdjacentHTML('beforeend', rowHTML(i));
+    }
+    $$('.trow .monto, .trow .destino, .trow .motivo, .trow .proyecto, .trow .pc')
+      .forEach(el => el.addEventListener('input', recalc));
+    // Proyecto por defecto del usuario
+    $$('.trow .proyecto').forEach(el => {
+      if (state.user?.proydef && !el.value) el.value = String(state.user.proydef || '').toUpperCase();
+    });
+  }
+  function getItems() {
+    return $$('.trow').map(r => {
+      const g = sel => (r.querySelector(sel)?.value || '').trim();
+      const destino = g('.destino').toUpperCase();
+      const motivo  = g('.motivo').toUpperCase();
+      const proyecto= g('.proyecto').toUpperCase();
+      const pc      = g('.pc');
+      const monto   = toNum(r.querySelector('.monto')?.value);
+      return (monto > 0) ? { destino, motivo, proyecto, pc, monto } : null;
+    }).filter(Boolean);
+  }
+  async function recalc() {
+    try {
+      const items = getItems();
+      const total = Number(items.reduce((a, x) => a + Number(x.monto || 0), 0).toFixed(2));
+      if (ui.totalTxt) {
+        ui.totalTxt.textContent = money(total);
+        ui.totalTxt.className = (ui.totalTxt.className || '').replace(/\b(ok|bad)\b/g, '') + ' ' + (total > state.tope ? 'bad' : 'ok');
+      }
+      const fecha = ui.fecha?.value || new Date().toISOString().slice(0, 10);
+      if (state.user?.dni && fecha) {
+        const r = await api(`/api/acumulado?dni=${encodeURIComponent(state.user.dni)}&fecha=${encodeURIComponent(fecha)}`);
+        if (ui.acumTxt) ui.acumTxt.textContent = money(r.acc);
+        const disp = Math.max(0, Number(state.tope) - Number(r.acc));
+        if (ui.dispTxt) ui.dispTxt.textContent = money(disp);
+        if (ui.alert) {
+          if (total > disp) {
+            ui.alert.style.display = 'block';
+            ui.alert.textContent = `Has superado el tope disponible de ${money(disp)}.`;
+          } else {
+            ui.alert.style.display = 'none';
+            ui.alert.textContent = '';
+          }
+        }
+      }
+    } catch (e) { /* silencioso */ }
+  }
+
+  async function save() {
+    const items = getItems();
+    if (!state.user) { alert('Inicia sesión primero.'); return; }
+    if (!items.length) { alert('Ingrese al menos un ítem con monto.'); return; }
+    const fecha = ui.fecha?.value || new Date().toISOString().slice(0, 10);
+    if (ui.btnSave) ui.btnSave.disabled = true;
+    try {
+      const r = await api('/api/planillas', {
+        method: 'POST',
+        body: JSON.stringify({ dni: state.user.dni, email: state.user.email, fecha, items })
+      });
+      await exportPDF({ fecha, items, total: r.total, serie: r.serie, num: r.num, emp: r.empresa, u: state.user });
+      alert(`Planilla ${r.serie}-${String(r.num).padStart(5, '0')} guardada y exportada.`);
+    } catch (e) {
+      alert(e.message || 'Error al guardar');
+    } finally { if (ui.btnSave) ui.btnSave.disabled = false; }
+  }
+
+  async function exportPDF({ fecha, items, total, serie, num, emp, u }) {
+    const ctor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!ctor) { alert('No se pudo cargar jsPDF'); return; }
+    const doc = new ctor({ unit: 'pt', format: 'a4' });
+    const razon = emp?.razon || 'PADOVA', ruc = emp?.ruc || '—';
+    doc.setFontSize(12); doc.text(razon, 40, 40); doc.text('R.U.C.: ' + ruc, 40, 58);
+    doc.setFontSize(14); doc.text('PLANILLA DE MOVILIDAD', 300, 40, { align: 'center' });
+    doc.text(`Planilla Nro. ${serie}-${String(num).padStart(5, '0')}`, 300, 58, { align: 'center' });
+    doc.setFontSize(10);
+    const trb = `${(u?.nombres || '').toUpperCase()} ${(u?.apellidos || '').toUpperCase()}  DNI: ${u?.dni || ''}`;
+    doc.text('Fecha de Emisión: ' + fecha, 40, 90);
+    doc.text('Trabajador: ' + trb, 40, 108);
+    let y = 140;
+    const cols = ['#', 'DESTINO', 'MOTIVO', 'PROYECTO', 'PC', 'MONTO (S/)'], w = [24, 120, 120, 140, 60, 80];
+    const row = (c, yy, h) => { let x = 40; for (let i = 0; i < c.length; i++) { doc.rect(x, yy, w[i], 22); doc.setFontSize(h ? 10 : 9); doc.text(String(c[i] ?? ''), x + 3, yy + 14); x += w[i]; } };
+    row(cols, y, true); y += 22;
+    items.forEach((it, i) => { if (y > 760) { doc.addPage(); y = 40; } row([i + 1, it.destino, it.motivo, it.proyecto, it.pc, Number(it.monto).toFixed(2)], y); y += 22; });
+    y += 10; doc.setFontSize(12); doc.text('Total: ' + money(total), 40, y + 20);
+    doc.save(`${serie}-${String(num).padStart(5, '0')}.pdf`);
+  }
+
+  async function loadBase() {
+    try { const p = await api('/api/ping'); state.tope = Number(p.tope || 45); } catch {}
+    if (ui.topeTxt) ui.topeTxt.textContent = money(state.tope);
+    try { state.empresas = await api('/api/empresas'); } catch {}
+    try { state.usuarios = await api('/api/usuarios'); } catch {}
+
+    // Usuario desde localStorage o admin por defecto
+    let email = ''; try { email = localStorage.getItem('planilla_email') || ''; } catch {}
+    if (!email) email = 'admin@empresa.com';
+    try {
+      const u = await api('/api/login?email=' + encodeURIComponent(email));
+      state.user = u;
+      // Cabecera empresa
+      const emp = state.empresas.find(e => e.id === (u?.empresaid || ''));
+      const razonEls = $$('#emp-razon, #razon, .emp-razon'); const rucEls = $$('#emp-ruc, #ruc, .emp-ruc');
+      razonEls.forEach(el => el.textContent = emp?.razon || '—');
+      rucEls.forEach(el => el.textContent = emp?.ruc || '—');
+      const proyDefEl = $('#proydef'); if (proyDefEl) proyDefEl.textContent = (u?.proydef || '—').toUpperCase();
+      // Trabajadores
+      if (ui.trabajador) {
+        ui.trabajador.innerHTML = '';
+        state.usuarios.filter(x => x.activo).forEach(x => {
+          const o = document.createElement('option');
+          o.value = x.email; o.textContent = `${x.nombres} ${x.apellidos}`;
+          if (x.email.toLowerCase() === u.email.toLowerCase()) o.selected = true;
+          ui.trabajador.appendChild(o);
+        });
+        ui.trabajador.onchange = async () => {
+          const em = ui.trabajador.value;
+          const nx = state.usuarios.find(x => x.email.toLowerCase() === em.toLowerCase());
+          if (nx) { state.user = nx; recalc(); }
+        };
+      }
+    } catch {}
+  }
+
+  // Arranque
+  document.addEventListener('DOMContentLoaded', async () => {
+    try {
+      await loadBase();
+      renderRows(true);
+      recalc();
+      if (ui.btnSave) ui.btnSave.addEventListener('click', save);
+      // Recalcular cuando cambia la fecha
+      if (ui.fecha) ui.fecha.addEventListener('change', recalc);
+    } catch (e) {
+      console.error('HOTFIX:', e);
+      alert('No se pudo inicializar la UI (hotfix).');
+    }
+  });
+})();
 </script>
 </body>
 </html>

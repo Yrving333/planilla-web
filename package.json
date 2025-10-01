@@ -1,16 +1,20 @@
 {
   "name": "planilla-web",
   "version": "1.0.0",
+  "description": "Planilla de movilidad S/45 - Render + Neon",
   "main": "server.cjs",
+  "type": "commonjs",
   "scripts": {
-    "start": "node server.cjs"
+    "start": "node server.cjs",
+    "dev": "nodemon server.cjs"
   },
-  "engines": { "node": ">=20.0.0" },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "pg": "^8.11.3"
+    "pg": "^8.12.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
-
