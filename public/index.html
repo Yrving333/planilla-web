@@ -1,582 +1,544 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Planilla de Movilidad — S/45</title>
-
-<!-- PDF -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-  :root{
-    --primary:#2563eb;--primary-600:#1d4ed8;
-    --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
-    --bg:#f1f5f9;--card:#ffffff;--chip:#f8fafc;
-    --ok:#16a34a;--bad:#ef4444;--zebra:#fafafa
-  }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);padding:20px;display:flex;justify-content:center}
-  .app{width:100%;max-width:1180px}
-  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-  .who{font-size:.88rem;color:var(--muted)}
-  .btn{border:none;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;letter-spacing:.2px}
-  .btn.primary{background:var(--primary);color:#fff;box-shadow:0 6px 20px rgba(37,99,235,.18)}
-  .btn.primary:hover{background:var(--primary-600)}
-  .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
-  .btn.small{padding:7px 10px;font-size:.9rem}
-  .tabs{display:flex;gap:12px;margin-bottom:16px}
-  .tab{padding:10px 16px;border:none;background:transparent;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:700}
-  .tab.active{color:var(--primary);border-bottom-color:var(--primary)}
-  .view{display:none}.view.active{display:block}
-
-  .card{background:var(--card);border-radius:16px;box-shadow:0 10px 28px rgba(2,8,23,.06);margin-bottom:16px;overflow:hidden}
-  .card-h,.card-b{padding:18px 20px}.card-h{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#ffffff,#fbfdff)}
-  .brand{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
-  .brand img{max-height:42px}
-  .cinfo{font-size:.86rem;color:var(--muted);text-align:right;line-height:1.45}
-  .cinfo b{color:var(--ink)}
-  h1.title{margin:8px 0 2px;text-align:center;font-size:1.28rem;letter-spacing:.2px}
-  .subtitle{margin:0;text-align:center;color:#1d4ed8;font-weight:800;font-size:.92rem}
-
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .group label{display:block;margin:0 0 6px;font-weight:700;font-size:.9rem}
-  .group input,.group select,.group textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;font-size:.95rem;background:#fff}
-  .uppercase{text-transform:uppercase}
-  .worker-row{display:flex;gap:8px;align-items:flex-end}
-
-  .list{padding:0 20px 10px}
-  .thead,.trow{display:grid;grid-template-columns:34px 1.2fr 1.2fr 1fr .7fr .7fr;gap:10px;align-items:center}
-  .thead{padding:0 0 6px;color:var(--muted);text-transform:uppercase;font-size:.72rem}
-  .trow{padding:6px 10px;border-bottom:1px solid var(--line);background:#fff}
-  .trow:nth-child(odd){background:var(--zebra)}
-  .trow input,.trow select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff}
-  .num{color:var(--muted);text-align:center;font-weight:900}
-
-  .alert{width:calc(100% - 40px);background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:12px;padding:10px 12px;margin:6px 20px 0;display:none}
-  .total{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;align-items:center;background:var(--chip);border-top:1px solid var(--line);padding:14px 20px}
-  .pill{font-size:.78rem;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:white}
-  .amount{font-size:1.22rem;font-weight:900}
-  .amount.ok{color:var(--ok)} .amount.bad{color:var(--bad)}
-  .legal{font-size:.75rem;color:#6b7280;text-align:justify;padding:0 20px 18px}
-
-  .table-wrap{overflow-x:auto}
-  table.tbl{width:100%;border-collapse:collapse;table-layout:fixed}
-  .tbl th,.tbl td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .tbl th{background:#f8fafc;text-transform:uppercase;font-size:.7rem}
-  .center{text-align:center}
-  .w-s{width:78px;min-width:78px}
-  .w-m{width:108px;min-width:108px}
-  .w-l{width:160px;min-width:160px}
-
-  .login-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999}
-  .login-card{background:#fff;border-radius:16px;box-shadow:0 12px 36px rgba(0,0,0,.25);padding:22px 20px;min-width:340px;max-width:420px}
-  .login-card h3{margin:0 0 6px}
-  .hint{font-size:.82rem;color:var(--muted);margin-top:4px}
-  .login-actions{display:flex;gap:8px;margin-top:12px;justify-content:flex-end;flex-wrap:wrap}
-  .danger{background:#ef4444;color:#fff}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Planilla de Movilidad</title>
+  <style>
+    :root{
+      --bg:#f5f7fb; --card:#fff; --ink:#1f2937; --muted:#6b7280; --brand:#2563eb;
+      --ok:#16a34a; --warn:#d97706; --danger:#dc2626; --line:#e5e7eb;
+      --radius:14px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+    header{padding:10px 16px;border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:5}
+    header .row{display:flex;gap:12px;align-items:center;justify-content:space-between;max-width:1100px;margin:0 auto}
+    header .meta{font-size:13px;color:var(--muted)}
+    .tabs{display:flex;gap:16px;padding:12px 0}
+    .tab{cursor:pointer;color:var(--muted);padding:8px 10px;border-radius:10px}
+    .tab.active{background:#e8eefc;color:#1743a3}
+    .wrap{max-width:1100px;margin:18px auto;padding:0 12px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 2px 14px rgba(0,0,0,.04)}
+    .card .hd{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+    .pill{background:#eef2ff;border:1px solid #dbeafe;color:#1e3a8a;border-radius:999px;padding:2px 10px;font-size:12px}
+    .grid{display:grid;gap:10px}
+    .form{padding:16px 20px}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .col{flex:1 1 220px}
+    label{display:block;font-size:12px;color:var(--muted);margin:3px 0 6px}
+    input,select,button{font:14px system-ui}
+    input,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;outline:none}
+    input:focus,select:focus{border-color:#bfd0ff;box-shadow:0 0 0 3px #e7efff}
+    .btn{display:inline-flex;align-items:center;gap:8px;border-radius:12px;padding:12px 16px;border:1px solid transparent;background:var(--brand);color:#fff;cursor:pointer}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .btn.light{background:#eef2ff;color:#1e40af;border-color:#cbd5ff}
+    .btn.ghost{background:transparent;border-color:var(--line);color:var(--ink)}
+    .btn.small{padding:8px 10px;border-radius:10px}
+    .mb8{margin-bottom:8px}
+    .mt10{margin-top:10px}
+    .mt16{margin-top:16px}
+    .mt24{margin-top:24px}
+    .mt32{margin-top:32px}
+    .flex{display:flex;gap:10px;align-items:center}
+    .right{margin-left:auto}
+    .kpis{display:flex;gap:10px;flex-wrap:wrap}
+    .kpi{background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:8px 10px;font-size:12px}
+    .kpi strong{font-size:14px}
+    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    th, td{padding:6px}
+    thead th{font-size:12px;color:var(--muted)}
+    tbody tr{background:#f9fafb;border:1px solid var(--line)}
+    tbody tr td:first-child{border-radius:10px 0 0 10px}
+    tbody tr td:last-child{border-radius:0 10px 10px 0}
+    .num{width:50px;text-align:center;color:var(--muted)}
+    .amount input{text-align:right}
+    .foot{border-top:1px dashed var(--line);padding:16px 20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .total{margin-left:auto;font-weight:600}
+    /* Historial */
+    .hist{padding:18px}
+    .hist .item{border:1px solid var(--line);background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:10px}
+    .muted{color:var(--muted)}
+    /* Modal login */
+    .overlay{position:fixed;inset:0;background:rgba(15,23,42,.48);display:none;place-items:center;z-index:20}
+    .modal{width:min(520px,92vw);background:#fff;border-radius:16px;border:1px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.2)}
+    .modal .hd{padding:16px 18px;border-bottom:1px solid var(--line);font-weight:600}
+    .modal .bd{padding:16px 18px}
+    .modal .ft{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end}
+    .center{display:flex;align-items:center;justify-content:center}
+    .hidden{display:none !important}
+    .note{font-size:12px;color:var(--muted)}
+  </style>
 </head>
 <body>
-<div class="app">
-  <div class="topbar">
-    <div class="who" id="who">No autenticado</div>
-    <div>
-      <button id="btn-login" class="btn primary">Iniciar sesión</button>
-      <button id="btn-logout" class="btn ghost" style="display:none">Cerrar sesión</button>
-    </div>
-  </div>
-
-  <div class="tabs">
-    <button class="tab active" data-tab="new">Nueva Planilla</button>
-    <button class="tab" data-tab="hist">Historial</button>
-    <button id="tab-admin" class="tab" data-tab="admin" style="display:none">Ajustes (Admin)</button>
-  </div>
-
-  <!-- NUEVA -->
-  <div id="view-new" class="view active">
-    <div class="card">
-      <div class="card-h">
-        <div class="brand">
-          <img id="logo" alt="Logo empresa" style="display:none">
-          <div id="cinfo" class="cinfo"><b>—</b><br>R.U.C. —<br><span id="caddr"></span></div>
-        </div>
-        <h1 id="h-num" class="title">PLANILLA DE MOVILIDAD</h1>
-        <p id="p-proy" class="subtitle">PROYECTO PRINCIPAL: —</p>
+  <header>
+    <div class="row">
+      <div class="meta">
+        <span id="userLine">No autenticado</span>
       </div>
-      <div class="card-b">
-        <div class="grid">
-          <div class="group">
-            <label for="f-emision">Fecha de Emisión</label>
-            <input id="f-emision" type="date">
+      <div class="tabs">
+        <div class="tab active" data-tab="planilla">Nueva Planilla</div>
+        <div class="tab" data-tab="historial">Historial</div>
+      </div>
+      <button id="btn-logout" class="btn light small right" title="Cerrar sesión">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- ============== PANEL PLANILLA ============== -->
+    <section id="panel-planilla" class="card">
+      <div class="hd">
+        <div class="pill">PLANILLA DE MOVILIDAD</div>
+        <div class="muted">PROYECTO PRINCIPAL: <strong class="emp-razon">—</strong></div>
+        <div class="muted">R.U.C.: <strong class="emp-ruc">—</strong></div>
+      </div>
+
+      <div class="form">
+        <div class="row">
+          <div class="col">
+            <label>Fecha de Emisión</label>
+            <input id="f-emision" type="date" />
           </div>
-          <div class="worker-row">
-            <div class="group" style="flex:1">
-              <label for="sel-trabajador">Trabajador Seleccionado</label>
-              <select id="sel-trabajador"></select>
+          <div class="col" style="min-width:340px">
+            <label>Trabajador Seleccionado</label>
+            <div class="flex">
+              <select id="sel-trabajador" style="flex:1"></select>
+              <button id="btn-add-row" class="btn light small" title="Agregar fila">＋</button>
             </div>
-            <button id="btn-new-worker" class="btn ghost small" title="Nuevo trabajador">+</button>
-            <button id="btn-edit-worker" class="btn ghost small" title="Editar trabajador">✎</button>
+          </div>
+        </div>
+
+        <div class="mt16">
+          <div class="kpis">
+            <div class="kpi">Tope por día: <strong>S/ <span id="tope-dia">45.00</span></strong></div>
+            <div class="kpi">Acumulado día: <strong>S/ <span id="acc-dia">0.00</span></strong></div>
+            <div class="kpi">Disponible: <strong>S/ <span id="disp-dia">45.00</span></strong></div>
+            <div class="kpi">Total actual: <strong>S/ <span id="total-actual">0.00</span></strong></div>
+          </div>
+        </div>
+
+        <div class="mt16">
+          <table>
+            <thead>
+              <tr>
+                <th class="num">#</th>
+                <th>DESTINO</th>
+                <th>MOTIVO</th>
+                <th>PROYECTO</th>
+                <th style="width:120px">PC</th>
+                <th style="width:140px">MONTO (S/)</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div class="foot">
+          <span class="note">La falta de consignación del trabajador, DNI, motivo, destino, proyecto y monto gastado, respecto a cada desplazamiento, invalida la planilla.</span>
+          <div class="total">Total: S/ <span id="total-foot">0.00</span></div>
+          <button id="btn-save" class="btn">Finalizar, Guardar y Exportar a PDF</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== PANEL HISTORIAL ============== -->
+    <section id="panel-historial" class="card hidden">
+      <div class="hd">
+        <div class="pill">HISTORIAL</div>
+        <div class="muted">Solo ves tus propias planillas. Los administradores ven todo.</div>
+      </div>
+      <div class="hist" id="hist-list">
+        <!-- items de historial -->
+      </div>
+    </section>
+  </div>
+
+  <!-- ============== MODAL LOGIN ============== -->
+  <div id="modal-login" class="overlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Iniciar sesión">
+      <div class="hd">Iniciar sesión</div>
+      <div class="bd">
+        <div class="row">
+          <div class="col">
+            <label>Email</label>
+            <input id="login-email" type="email" placeholder="admin@empresa.com" />
+          </div>
+        </div>
+        <div class="row">
+          <div class="col">
+            <label>Clave</label>
+            <input id="login-pass" type="password" placeholder="(no se valida, es informativo)" />
+            <div class="note mt10">Se valida contra la tabla <code>usuarios</code>. La clave no se evalúa.</div>
           </div>
         </div>
       </div>
-
-      <div class="list">
-        <div class="thead">
-          <span>#</span><span>Destino</span><span>Motivo</span><span>Proyecto</span><span>PC</span><span>Monto (S/)</span>
-        </div>
-        <div id="rows"></div>
-      </div>
-
-      <div id="over-alert" class="alert">Has superado el tope de <b>S/ 45</b> por día/usuario. Ajusta los montos o cambia la fecha.</div>
-
-      <div class="total">
-        <span class="pill">Tope por día: <b>S/ 45.00</b></span>
-        <span class="pill">Acumulado día: <b id="pill-acum">S/ 0.00</b></span>
-        <span class="pill">Disponible: <b id="pill-disp">S/ 45.00</b></span>
-        <span style="font-weight:800">Total:</span>
-        <span id="total" class="amount ok">S/ 0.00</span>
-      </div>
-
-      <div class="legal">
-        <b>Base Legal:</b> Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del artículo 21° del Reglamento de la ley del Impuesto a la Renta. Nota: La falta de consignación de la fecha en que se incurrió en el gasto, nombres y apellidos de cada trabajador, número de DNI, motivo y destino del desplazamiento y monto gastado, respecto a cada desplazamiento sólo inhabilita la planilla para la sustentación del gasto que corresponda a tal desplazamiento. (*) Numeración de la planilla.
-      </div>
-    </div>
-    <button id="btn-save" class="btn primary">Finalizar, Guardar y Exportar a PDF</button>
-  </div>
-
-  <!-- HISTORIAL -->
-  <div id="view-hist" class="view">
-    <div class="card">
-      <div class="card-h" style="display:flex;justify-content:space-between;align-items:center">
-        <b>Historial de Planillas</b>
-        <div id="hist-admin-actions" style="display:none;gap:8px">
-          <button class="btn ghost" id="btn-hist-edit">Editar historial</button>
-          <button class="btn primary" id="hist-save" style="display:none">Guardar cambios</button>
-          <button class="btn danger" id="hist-del" style="display:none">Eliminar seleccionados</button>
-        </div>
-      </div>
-      <div class="card-b"><div class="table-wrap"><div id="hist"></div></div></div>
-    </div>
-  </div>
-
-  <!-- AJUSTES (ADMIN) -->
-  <div id="view-admin" class="view">
-    <div class="card">
-      <div class="card-h"><b>Acceso administrador</b></div>
-      <div class="card-b" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input id="pin-in" type="password" placeholder="PIN admin (por defecto: 1234)" style="max-width:220px">
-        <button class="btn primary" id="btn-admin-pin">Ingresar</button>
-        <span id="pin-ok" style="color:#059669;font-weight:700"></span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-h"><b>Empresas</b></div>
-      <div class="card-b">
-        <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button id="emp-add" class="btn ghost" disabled>Agregar empresa</button>
-          <button id="emp-save" class="btn primary" disabled>Guardar cambios</button>
-        </div>
-        <div class="table-wrap"><div id="emp-table"></div></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-h"><b>Usuarios</b></div>
-      <div class="card-b">
-        <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button id="usr-add" class="btn ghost" disabled>Agregar usuario</button>
-          <button id="usr-del" class="btn danger" disabled>Eliminar seleccionados</button>
-          <button id="usr-save" class="btn primary" disabled>Guardar cambios</button>
-        </div>
-        <div class="table-wrap"><div id="usr-table"></div></div>
+      <div class="ft">
+        <button id="btn-login" class="btn">Entrar</button>
       </div>
     </div>
   </div>
 
-  <!-- MODAL Trabajador -->
-  <div id="modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000">
-    <div style="background:#fff;border-radius:16px;padding:18px;min-width:340px;max-width:560px">
-      <h3 id="m-title" style="margin:0 0 10px">Trabajador</h3>
-      <div class="grid">
-        <div class="group"><label>Nombres</label><input id="m-nombres" class="uppercase"></div>
-        <div class="group"><label>Apellidos</label><input id="m-apellidos" class="uppercase"></div>
-      </div>
-      <div class="grid" style="margin-top:8px">
-        <div class="group"><label>DNI</label><input id="m-dni" maxlength="8"></div>
-        <div class="group"><label>Empresa</label><select id="m-empresa"></select></div>
-      </div>
-      <div class="grid" style="margin-top:8px">
-        <div class="group"><label>Rol</label>
-          <select id="m-rol">
-            <option value="ADMIN_PADOVA">ADMIN_PADOVA</option>
-            <option value="USUARIO">USUARIO</option>
-          </select>
-        </div>
-        <div class="group"><label>Proyecto por defecto</label><input id="m-proydef" class="uppercase"></div>
-      </div>
-      <div class="group" style="margin-top:8px">
-        <label>Proyectos permitidos (coma)</label>
-        <textarea id="m-proys" rows="2" class="uppercase" placeholder="ADMIN PADOVA, LITORAL 900, SANTA BEATRIZ"></textarea>
-      </div>
-      <div class="group" style="margin-top:8px">
-        <label>Email (para login)</label>
-        <input id="m-email" type="email" placeholder="usuario@tuempresa.com"/>
-      </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
-        <button class="btn ghost" id="btn-modal-cancel">Cancelar</button>
-        <button class="btn primary" id="btn-modal-save">Guardar</button>
-      </div>
-    </div>
-  </div>
+  <!-- jsPDF para exportar -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-  <!-- LOGIN OVERLAY -->
-  <div id="login-overlay" class="login-overlay" style="display:flex">
-    <div class="login-card">
-      <h3>Iniciar sesión</h3>
-      <div id="login-local">
-        <div class="group"><label>Email</label><input id="local-email" type="email" placeholder="admin@empresa.com"></div>
-        <div class="group" style="margin-top:8px"><label>Clave</label><input id="local-pass" type="password" placeholder="******"></div>
-        <div class="hint">Se valida contra la tabla <b>usuarios</b>. La clave no se evalúa.</div>
-        <div class="login-actions">
-          <button class="btn primary" id="btn-local-login">Entrar</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script>
-/* =================== Estado global =================== */
-window.SESSION = window.SESSION || {};            // { email }
-window.CURRENT_USER = window.CURRENT_USER || null; // objeto usuario logueado/seleccionado
-const STATE = { empresas: [], usuarios: [] };
+  <script>
+  /*************** Estado global ***************/
+  window.SESSION = window.SESSION || {};
+  window.CURRENT_USER = window.CURRENT_USER || null;
+  const STATE = { empresas: [], usuarios: [] };
+  const TOPE_UI = 45; // solo para mostrar; el backend valida de verdad
 
-/* =================== Helpers =================== */
-const qs  = s => document.querySelector(s);
-const qsa = s => Array.from(document.querySelectorAll(s));
-
-function toMoney(v){
-  if (v==null) return 0;
-  let s = String(v).trim();
-  s = s.replace(/,/g,'.').replace(/[^0-9.\-]/g,'');
-  const parts=s.split('.');
-  if(parts.length>2){ const last=parts.pop(); s=parts.join('')+'.'+last; }
-  const n = parseFloat(s);
-  return Number.isFinite(n)?Number(n.toFixed(2)):0;
-}
-
-async function api(path, opt={}){
-  const r = await fetch(path, {
-    headers: { 'Content-Type':'application/json' },
-    credentials: 'same-origin',
-    ...opt
-  });
-  let data=null; try{ data=await r.json(); }catch{}
-  if(!r.ok){
-    const msg = (data&&(data.msg||data.error)) || `HTTP ${r.status}`;
-    throw { ...data, status:r.status, msg };
+  /*************** Helpers ***************/
+  const qs  = s => document.querySelector(s);
+  const qsa = s => Array.from(document.querySelectorAll(s));
+  const fmt = n => Number(n||0).toFixed(2);
+  function toMoney(v){
+    if(v==null) return 0;
+    let s = String(v).trim();
+    s = s.replace(/,/g,'.').replace(/[^0-9.\-]/g,'');
+    const parts = s.split('.');
+    if(parts.length>2){ const last=parts.pop(); s = parts.join('') + '.' + last; }
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
   }
-  return data;
-}
-
-/* =================== Login (UI + sesión) =================== */
-function findLoginEls(){
-  // Tolerante a distintos IDs/clases
-  const modal = qs('#modal-login') || qs('.modal-login') || qs('[data-modal="login"]') || document.querySelector('[aria-label="Iniciar sesión"]') || null;
-  const email = qs('#login-email') || (modal?modal.querySelector('input[type="email"]'):null) || qs('input[type="email"]');
-  const pass  = qs('#login-pass')  || (modal?modal.querySelector('input[type="password"]'):null) || qs('input[type="password"]');
-  const btn   = qs('#btn-login')   || (modal?modal.querySelector('button, input[type="submit"]'):null) || null;
-  return { modal, email, pass, btn };
-}
-
-function showLoginModal(){
-  const { modal } = findLoginEls();
-  if (modal){ modal.style.display = ''; modal.removeAttribute('aria-hidden'); }
-}
-function hideLoginModal(){
-  const { modal } = findLoginEls();
-  if (modal){ modal.style.display = 'none'; modal.setAttribute('aria-hidden','true'); }
-}
-
-async function doLoginWithEmail(email){
-  const u = await api('/api/login?email=' + encodeURIComponent(String(email||'').trim()));
-  if (!u || !u.activo) throw new Error('Usuario inexistente o inactivo');
-  window.SESSION.email = u.email;
-  window.CURRENT_USER  = u;
-  try{ localStorage.setItem('planilla_email', u.email); }catch{}
-  hideLoginModal();
-  await cargarEmpresasYUsuarios(true); // true = post-login
-}
-
-function wireLoginUI(){
-  const { email, pass, btn } = findLoginEls();
-  if (!btn) return;
-  btn.addEventListener('click', async (ev)=>{
-    ev.preventDefault();
-    try{
-      const em = (email && email.value) ? email.value.trim() : '';
-      if(!em){ alert('Ingrese el email.'); return; }
-      await doLoginWithEmail(em);
-    }catch(e){
-      console.error('Login error:', e);
-      alert(e?.msg || e?.message || 'No se pudo iniciar sesión.');
-    }
-  });
-}
-
-/* =================== Carga base (empresas/usuarios) =================== */
-async function cargarEmpresasYUsuarios(isPostLogin=false){
-  // Empresas con fallback
-  try{ STATE.empresas = await api('/api/empresas?simple=1'); }
-  catch{ STATE.empresas = await api('/api/empresas'); }
-
-  // Usuarios
-  STATE.usuarios = await api('/api/usuarios');
-
-  // Usuario actual: prioriza SESSION, luego localStorage, luego admin
-  let email = window.SESSION.email;
-  if (!email){
-    try{ email = localStorage.getItem('planilla_email') || ''; }catch{}
+  async function api(path,opt={}){
+    const r = await fetch(path,{ headers:{'Content-Type':'application/json'}, credentials:'same-origin', ...opt });
+    let data=null; try{ data=await r.json(); }catch{}
+    if(!r.ok){ const msg=(data&&(data.msg||data.error))||('HTTP '+r.status); throw {...data,status:r.status,msg}; }
+    return data;
   }
-  if (!email && !isPostLogin) email = 'admin@empresa.com';
+  const todayISO = ()=> new Date().toISOString().slice(0,10);
 
-  if (email){
-    try{
-      const u = await api('/api/login?email=' + encodeURIComponent(email));
-      if (u){ window.CURRENT_USER = u; window.SESSION.email = u.email; }
-    }catch(_){}
-  }
-  if (!window.CURRENT_USER){
-    const u = STATE.usuarios.find(x=>x.activo) || STATE.usuarios[0] || null;
-    window.CURRENT_USER = u || null;
+  /*************** Modal / Login ***************/
+  function showLogin(){ qs('#modal-login').style.display='grid'; }
+  function hideLogin(){ qs('#modal-login').style.display='none'; }
+
+  async function doLogin(email){
+    const u = await api('/api/login?email=' + encodeURIComponent(String(email||'').trim()));
+    if(!u || !u.activo) throw new Error('Usuario inexistente o inactivo.');
+    window.SESSION.email = u.email;
+    window.CURRENT_USER  = u;
+    try{ localStorage.setItem('planilla_email', u.email); }catch{}
+    hideLogin();
+    await cargarEmpresasYUsuarios(true);
   }
 
-  renderEmpresaHeader();
-  llenarTrabajadores();
-
-  // Llamadas opcionales si existen en tu código
-  if (typeof window.onTrabajadorChange === 'function') window.onTrabajadorChange();
-  if (typeof window.renderRows === 'function') window.renderRows();
-}
-
-/* =================== Header empresa =================== */
-function renderEmpresaHeader(){
-  const empId = window.CURRENT_USER?.empresaid || '';
-  const emp = STATE.empresas.find(e => e.id === empId);
-  const razon = emp ? emp.razon : '—';
-  const ruc   = emp ? emp.ruc   : '—';
-
-  // Soporta clases o IDs
-  qsa('.emp-razon').forEach(el => el.textContent = razon);
-  qsa('.emp-ruc').forEach(el => el.textContent = ruc);
-  if (qs('#razon')) qs('#razon').textContent = razon;
-  if (qs('#ruc'))   qs('#ruc').textContent   = ruc;
-}
-
-/* =================== Selector de trabajador =================== */
-function llenarTrabajadores(){
-  const sel = qs('#sel-trabajador') || qs('select[name="trabajador"]');
-  if (!sel) return;
-
-  sel.innerHTML = '';
-  STATE.usuarios.filter(u=>u.activo).forEach(u=>{
-    const opt = document.createElement('option');
-    opt.value = u.email;
-    opt.textContent = `${u.nombres} ${u.apellidos}`;
-    if (window.CURRENT_USER && u.email.toLowerCase()===window.CURRENT_USER.email.toLowerCase()) opt.selected = true;
-    sel.appendChild(opt);
-  });
-
-  sel.onchange = ()=>{
-    const email = sel.value;
-    const u = STATE.usuarios.find(x=>x.email.toLowerCase()===email.toLowerCase());
-    if (u){
-      window.CURRENT_USER = u;
-      window.SESSION.email = u.email;
-      try{ localStorage.setItem('planilla_email', u.email); }catch{}
-      renderEmpresaHeader();
-      if (typeof window.onTrabajadorChange === 'function') window.onTrabajadorChange();
-    }
-  };
-}
-
-/* =================== Guardar + PDF =================== */
-async function guardarPlanilla(){
-  if (!window.CURRENT_USER){ alert('Seleccione un trabajador.'); return; }
-
-  const fecha = qs('#f-emision')?.value || '';
-  const items = [];
-  qsa('.trow').forEach(r=>{
-    const destino  = (r.querySelector('.destino') ?.value||'').trim().toUpperCase();
-    const motivo   = (r.querySelector('.motivo')  ?.value||'').trim().toUpperCase();
-    const proyecto = (r.querySelector('.proyecto')?.value||'').trim().toUpperCase();
-    const pc       = (r.querySelector('.pc')      ?.value||'').trim();
-    const monto    = toMoney(r.querySelector('.monto')?.value);
-    if (monto>0) items.push({ destino, motivo, proyecto, pc, monto });
-  });
-  if (!items.length){ alert('Ingrese al menos un ítem con monto.'); return; }
-
-  const btn = qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar');
-  if (btn) btn.disabled = true;
-
-  try{
-    const res = await api('/api/planillas', {
-      method:'POST',
-      body: JSON.stringify({
-        dni: window.CURRENT_USER.dni,
-        email: (window.SESSION?.email || window.CURRENT_USER.email),
-        fecha, items
-      })
+  function wireLogin(){
+    qs('#btn-login').addEventListener('click', async (ev)=>{
+      ev.preventDefault();
+      try{
+        const email = qs('#login-email').value.trim();
+        if(!email){ alert('Ingrese el email.'); return; }
+        await doLogin(email);
+      }catch(e){ console.error(e); alert(e?.msg||e?.message||'No se pudo iniciar sesión.'); }
     });
+  }
 
-    await renderPDF({
-      fecha: res.fecha || fecha,
-      items,
-      total: res.total,
-      serie: res.serie,
-      num:   res.num,
-      emp:   res.empresa,
-      u:     window.CURRENT_USER
+  /*************** Carga base ***************/
+  async function cargarEmpresasYUsuarios(post=false){
+    // Empresas (intenta simple)
+    try{ STATE.empresas = await api('/api/empresas?simple=1'); }
+    catch{ STATE.empresas = await api('/api/empresas'); }
+
+    STATE.usuarios = await api('/api/usuarios');
+
+    // Resolver usuario actual
+    let email = window.SESSION.email;
+    if(!email && !post){ try{ email = localStorage.getItem('planilla_email')||''; }catch{} }
+    if(!email && !post) email = 'admin@empresa.com';
+
+    if(email){
+      try{
+        const u = await api('/api/login?email=' + encodeURIComponent(email));
+        if(u){ window.CURRENT_USER = u; window.SESSION.email = u.email; }
+      }catch{}
+    }
+    if(!window.CURRENT_USER){
+      const u = STATE.usuarios.find(x=>x.activo) || STATE.usuarios[0] || null;
+      window.CURRENT_USER = u || null;
+    }
+
+    // Renderizar cabecera + selects + filas
+    renderHeaderUser();
+    renderEmpresaHeader();
+    llenarTrabajadores();
+    renderRows(5);
+    // Fecha por defecto hoy
+    if(!qs('#f-emision').value) qs('#f-emision').value = todayISO();
+    // KPIs
+    await refreshKPIs();
+    // Historial si tab abierto
+    if(!qs('#panel-historial').classList.contains('hidden')) renderHistorial();
+  }
+
+  function renderHeaderUser(){
+    const u = window.CURRENT_USER;
+    const line = u ? `Conectado: ${u.nombres} ${u.apellidos} — ${u.email} — Rol: ${u.rol}` : 'No autenticado';
+    qs('#userLine').textContent = line;
+  }
+
+  function renderEmpresaHeader(){
+    const emp = STATE.empresas.find(e => e.id === (window.CURRENT_USER?.empresaid||''));
+    qsa('.emp-razon').forEach(el=> el.textContent = emp ? emp.razon : '—');
+    qsa('.emp-ruc').forEach(el=> el.textContent   = emp ? emp.ruc   : '—');
+  }
+
+  function llenarTrabajadores(){
+    const sel = qs('#sel-trabajador'); if(!sel) return;
+    sel.innerHTML = '';
+    STATE.usuarios.filter(u=>u.activo).forEach(u=>{
+      const op = document.createElement('option');
+      op.value = u.email; op.textContent = `${u.nombres} ${u.apellidos}`;
+      if(window.CURRENT_USER && u.email.toLowerCase()===window.CURRENT_USER.email.toLowerCase()) op.selected=true;
+      sel.appendChild(op);
     });
-
-    alert(`Planilla ${res.serie}-${res.num} guardada y exportada.`);
-    if (typeof window.renderHistorial === 'function') window.renderHistorial();
-
-  }catch(e){
-    alert(e?.msg || e?.error || 'Error al guardar.');
-    console.error('Guardar planilla - error:', e);
-  }finally{
-    if (btn) btn.disabled = false;
-  }
-}
-
-/* =================== PDF (jsPDF) =================== */
-async function renderPDF({ fecha, items, total, serie, num, emp, u }){
-  const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
-  if (!jsPDFCtor) throw new Error('No se pudo cargar jsPDF');
-
-  const doc = new jsPDFCtor({ unit:'pt', format:'a4' });
-  const razon = (emp&&emp.razon)||'PADOVA';
-  const ruc   = (emp&&emp.ruc)||'—';
-
-  doc.setFontSize(12);
-  doc.text(razon, 40, 40);
-  doc.text(`R.U.C.: ${ruc}`, 40, 58);
-  doc.setFontSize(14);
-  doc.text('PLANILLA DE MOVILIDAD', 300, 40, { align:'center' });
-  doc.text(`Planilla Nro. ${serie}-${num}`, 300, 58, { align:'center' });
-
-  doc.setFontSize(10);
-  const trabajador = `${(u?.nombres||'').toUpperCase()} ${(u?.apellidos||'').toUpperCase()}  DNI: ${u?.dni||''}`;
-  doc.text(`Fecha de Emisión: ${fecha}`, 40, 90);
-  doc.text(`Trabajador: ${trabajador}`, 40, 108);
-
-  let y=140;
-  const cols=['#','DESTINO','MOTIVO','PROYECTO','PC','MONTO (S/)'];
-  const w=[24,120,120,140,60,80];
-  const row=(c,yy,h=false)=>{ let x=40; for(let i=0;i<c.length;i++){ doc.rect(x,yy,w[i],22); doc.setFontSize(h?10:9); doc.text(String(c[i]??''),x+3,yy+14); x+=w[i]; } };
-
-  row(cols,y,true); y+=22;
-  items.forEach((it,ix)=>{ if(y>760){ doc.addPage(); y=40; }
-    row([ix+1,(it.destino||'').toUpperCase(),(it.motivo||'').toUpperCase(),(it.proyecto||'').toUpperCase(),(it.pc||''), Number(it.monto||0).toFixed(2)], y);
-    y+=22;
-  });
-
-  y+=10; doc.setFontSize(12);
-  doc.text(`Total: S/ ${Number(total||0).toFixed(2)}`, 40, y+20);
-  doc.save(`${serie}-${num}.pdf`);
-}
-
-/* =================== Arranque =================== */
-window.addEventListener('DOMContentLoaded', async ()=>{
-  try{
-    // Recuperar sesión si existe
-    if (!window.SESSION.email){
-      try{ window.SESSION.email = localStorage.getItem('planilla_email') || ''; }catch{}
-    }
-    if (!window.SESSION.email) window.SESSION.email = 'admin@empresa.com';
-
-    wireLoginUI();
-    await cargarEmpresasYUsuarios();
-
-    // Botón guardar/exportar
-    const btn = qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar');
-    if (btn) btn.addEventListener('click', guardarPlanilla);
-
-    // Si hay modal visible pero ya tenemos sesión válida, lo ocultamos
-    if (window.CURRENT_USER && window.SESSION.email) hideLoginModal();
-
-  }catch(e){
-    console.error('Boot UI error:', e);
-    alert('No se pudo cargar datos base.');
-    showLoginModal();
-  }
-});
-</script>
-<script>
-/* =========================
-   HOTFIX ACCESO (auto-login)
-   ========================= */
-(async () => {
-  // 1) Si ya hay sesión válida, no hacemos nada
-  try {
-    if (!window.SESSION) window.SESSION = {};
-    if (window.SESSION.email) {
-      // Forzar ocultar modal si quedó abierto
-      ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay']
-        .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display='none'; el.setAttribute('aria-hidden','true'); }));
-      return;
-    }
-  } catch (_) {}
-
-  // 2) Intentar recuperar email previo almacenado
-  let email = '';
-  try { email = localStorage.getItem('planilla_email') || ''; } catch (_) {}
-
-  // 3) Fallback a admin si no hay sesión previa
-  if (!email) email = 'admin@empresa.com';
-
-  // 4) Login contra la API
-  try {
-    const r = await fetch('/api/login?email=' + encodeURIComponent(email), { credentials: 'same-origin' });
-    const u = await r.json();
-
-    if (u && u.email && (u.activo === true || u.activo === '1')) {
-      // Guardar sesión en memoria y storage
-      window.SESSION = { email: u.email };
-      window.CURRENT_USER = u;
-      try { localStorage.setItem('planilla_email', u.email); } catch (_) {}
-
-      // 5) Ocultar/cerrar cualquier modal/overlay de login conocido
-      const killers = ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay','.backdrop','.dialog','[role="dialog"]'];
-      killers.forEach(sel => document.querySelectorAll(sel).forEach(el => el.remove()));
-
-      // 6) Continuar boot de la UI si existe la función
-      if (typeof window.cargarEmpresasYUsuarios === 'function') {
-        await window.cargarEmpresasYUsuarios(true);
-      } else {
-        // Render mínimo de cabecera si no existe la función
-        const razonEls = document.querySelectorAll('.emp-razon,#razon');
-        const rucEls   = document.querySelectorAll('.emp-ruc,#ruc');
-        (razonEls||[]).forEach(el => el.textContent = (u.empresaid || '—'));
-        (rucEls||[]).forEach(el => el.textContent   = '');
+    sel.onchange = async ()=>{
+      const email = sel.value;
+      const u = STATE.usuarios.find(x=>x.email.toLowerCase()===email.toLowerCase());
+      if(u){ window.CURRENT_USER = u; window.SESSION.email = u.email;
+        try{ localStorage.setItem('planilla_email', u.email); }catch{}
+        renderHeaderUser(); renderEmpresaHeader(); await refreshKPIs();
       }
-    } else {
-      // No hay usuario/está inactivo: mostrar modal (si existe)
-      ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay']
-        .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display=''; el.removeAttribute('aria-hidden'); }));
-      console.warn('Auto-login: usuario no activo o no encontrado:', email);
-    }
-  } catch (e) {
-    console.error('Auto-login falló:', e);
-    // Mostrar modal (si existe) para que intentes manualmente
-    ['#modal-login','.modal-login','[data-modal="login"]','[aria-label="Iniciar sesión"]','.modal','.overlay']
-      .forEach(sel => document.querySelectorAll(sel).forEach(el => { el.style.display=''; el.removeAttribute('aria-hidden'); }));
+    };
   }
-})();
-</script>
+
+  /*************** Filas / Totales ***************/
+  function createRow(i){
+    const tr = document.createElement('tr');
+    tr.className = 'trow';
+    tr.innerHTML = `
+      <td class="num">${i}</td>
+      <td><input class="destino" placeholder="Destino"/></td>
+      <td><input class="motivo" placeholder="Motivo"/></td>
+      <td><input class="proyecto" placeholder="Proyecto"/></td>
+      <td><input class="pc" placeholder="94303"/></td>
+      <td class="amount"><input class="monto" placeholder="0.00"/></td>
+    `;
+    tr.querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('input', recalcTotals);
+    });
+    return tr;
+  }
+
+  function renderRows(min=5){
+    const tbody = qs('#rows'); tbody.innerHTML = '';
+    for(let i=1;i<=min;i++) tbody.appendChild(createRow(i));
+    recalcTotals();
+  }
+
+  function addRow(){
+    const tbody = qs('#rows');
+    const idx = tbody.querySelectorAll('tr').length + 1;
+    tbody.appendChild(createRow(idx));
+  }
+
+  function recalcTotals(){
+    const montos = qsa('.monto').map(x=> toMoney(x.value));
+    const total = montos.reduce((a,b)=>a+b,0);
+    qs('#total-actual').textContent = fmt(total);
+    qs('#total-foot').textContent   = fmt(total);
+    // disponible según KPI ya calculado
+    const disp = toMoney(qs('#disp-dia').textContent);
+    // nada más que mostrar aquí
+  }
+
+  /*************** KPIs ***************/
+  async function refreshKPIs(){
+    const tope = TOPE_UI;
+    const fecha = qs('#f-emision').value || todayISO();
+    qs('#tope-dia').textContent = fmt(tope);
+
+    let acc = 0;
+    try{
+      const dni = window.CURRENT_USER?.dni;
+      if(dni){
+        const hist = await api('/api/historial?dni=' + encodeURIComponent(dni));
+        acc = hist.filter(h => (h.fecha||'') === fecha)
+                  .reduce((a,b)=> a + Number(b.total||0), 0);
+      }
+    }catch(_){}
+    qs('#acc-dia').textContent  = fmt(acc);
+    const disp = Math.max(0, tope - acc);
+    qs('#disp-dia').textContent = fmt(disp);
+    recalcTotals();
+  }
+
+  /*************** Guardar + PDF ***************/
+  async function guardarPlanilla(){
+    if(!window.CURRENT_USER){ alert('Seleccione un trabajador.'); return; }
+    const fecha = qs('#f-emision')?.value || todayISO();
+
+    const items=[];
+    qsa('.trow').forEach(r=>{
+      const destino  = (r.querySelector('.destino') ?.value||'').trim().toUpperCase();
+      const motivo   = (r.querySelector('.motivo')  ?.value||'').trim().toUpperCase();
+      const proyecto = (r.querySelector('.proyecto')?.value||'').trim().toUpperCase();
+      const pc       = (r.querySelector('.pc')      ?.value||'').trim();
+      const monto    = toMoney(r.querySelector('.monto')?.value);
+      if(monto>0) items.push({ destino, motivo, proyecto, pc, monto });
+    });
+    if(!items.length){ alert('Ingrese al menos un ítem con monto.'); return; }
+
+    const btn = qs('#btn-save'); btn.disabled = true;
+    try{
+      const res = await api('/api/planillas', {
+        method:'POST',
+        body: JSON.stringify({
+          dni: window.CURRENT_USER.dni,
+          email: (window.SESSION?.email || window.CURRENT_USER.email),
+          fecha, items
+        })
+      });
+
+      await renderPDF({
+        fecha: res.fecha || fecha,
+        items,
+        total: res.total,
+        serie: res.serie,
+        num:   res.num,
+        emp:   res.empresa,
+        u:     window.CURRENT_USER
+      });
+
+      alert(`Planilla ${res.serie}-${res.num} guardada y exportada.`);
+      await refreshKPIs();
+      await renderHistorial();
+
+    }catch(e){
+      console.error(e);
+      alert(e?.msg || e?.error || 'Error al guardar.');
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  async function renderPDF({ fecha, items, total, serie, num, emp, u }){
+    const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if(!jsPDFCtor) throw new Error('No se pudo cargar jsPDF');
+
+    const doc = new jsPDFCtor({ unit:'pt', format:'a4' });
+    const razon = (emp&&emp.razon)||'PADOVA';
+    const ruc   = (emp&&emp.ruc)||'—';
+
+    doc.setFontSize(12);
+    doc.text(razon, 40, 40);
+    doc.text(`R.U.C.: ${ruc}`, 40, 58);
+    doc.setFontSize(14);
+    doc.text('PLANILLA DE MOVILIDAD', 300, 40, { align:'center' });
+    doc.text(`Planilla Nro. ${serie}-${num}`, 300, 58, { align:'center' });
+
+    doc.setFontSize(10);
+    const trabajador = `${(u?.nombres||'').toUpperCase()} ${(u?.apellidos||'').toUpperCase()}  DNI: ${u?.dni||''}`;
+    doc.text(`Fecha de Emisión: ${fecha}`, 40, 90);
+    doc.text(`Trabajador: ${trabajador}`, 40, 108);
+
+    let y=140;
+    const cols=['#','DESTINO','MOTIVO','PROYECTO','PC','MONTO (S/)'];
+    const w=[24,120,120,140,60,80];
+    const row=(c,yy,h=false)=>{ let x=40; for(let i=0;i<c.length;i++){ doc.rect(x,yy,w[i],22); doc.setFontSize(h?10:9); doc.text(String(c[i]??''),x+3,yy+14); x+=w[i]; } };
+
+    row(cols,y,true); y+=22;
+    items.forEach((it,ix)=>{ if(y>760){ doc.addPage(); y=40; }
+      row([ix+1,(it.destino||'').toUpperCase(),(it.motivo||'').toUpperCase(),(it.proyecto||'').toUpperCase(),(it.pc||''), Number(it.monto||0).toFixed(2)], y);
+      y+=22;
+    });
+
+    y+=10; doc.setFontSize(12);
+    doc.text(`Total: S/ ${Number(total||0).toFixed(2)}`, 40, y+20);
+    doc.save(`${serie}-${num}.pdf`);
+  }
+
+  /*************** Historial ***************/
+  async function renderHistorial(){
+    const host = qs('#hist-list'); host.innerHTML = '';
+    const dni = window.CURRENT_USER?.dni;
+    if(!dni){ host.innerHTML = '<div class="item">Sin datos</div>'; return; }
+
+    let data = [];
+    try{ data = await api('/api/historial?dni=' + encodeURIComponent(dni)); }
+    catch(_){ host.innerHTML = '<div class="item">No se pudo cargar el historial.</div>'; return; }
+
+    if(!data.length){ host.innerHTML = '<div class="item">Sin registros.</div>'; return; }
+
+    // Agrupar por (fecha, serie-num)
+    const key = r => `${r.fecha}|${r.serie}-${r.num}`;
+    const map = new Map();
+    data.forEach(r=>{
+      const k = key(r);
+      if(!map.has(k)) map.set(k, { fecha:r.fecha, serie:r.serie, num:r.num, items:[], total:0 });
+      const g = map.get(k);
+      g.items.push(r);
+      g.total += Number(r.total||0);
+    });
+
+    [...map.values()].sort((a,b)=> (a.fecha<b.fecha?1:-1)).forEach(g=>{
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.innerHTML = `
+        <div class="flex">
+          <div><strong>${g.serie}-${g.num}</strong> &middot; <span class="muted">${g.fecha}</span></div>
+          <div class="right"><strong>Total S/ ${fmt(g.total)}</strong></div>
+        </div>
+        <div class="mt10" style="font-size:13px">
+          ${g.items.map(i => `
+            <div class="row mb8" style="gap:8px">
+              <div style="min-width:120px"><span class="muted">Destino:</span> ${i.destino||''}</div>
+              <div style="min-width:120px"><span class="muted">Motivo:</span> ${i.motivo||''}</div>
+              <div style="min-width:160px"><span class="muted">Proyecto:</span> ${i.proyecto||''}</div>
+              <div style="min-width:70px"><span class="muted">PC:</span> ${i.pc||''}</div>
+              <div><span class="muted">Monto:</span> S/ ${fmt(i.monto||0)}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      host.appendChild(el);
+    });
+  }
+
+  /*************** Tabs / Eventos ***************/
+  function wireTabs(){
+    qsa('.tab').forEach(tab=>{
+      tab.addEventListener('click', async ()=>{
+        qsa('.tab').forEach(t=>t.classList.remove('active'));
+        tab.classList.add('active');
+
+        const target = tab.dataset.tab;
+        qs('#panel-planilla').classList.toggle('hidden', target!=='planilla');
+        qs('#panel-historial').classList.toggle('hidden', target!=='historial');
+        if(target==='historial') await renderHistorial();
+      });
+    });
+  }
+
+  function wireUI(){
+    qs('#btn-add-row').addEventListener('click', (e)=>{ e.preventDefault(); addRow(); });
+    qs('#btn-save').addEventListener('click', guardarPlanilla);
+    qs('#f-emision').addEventListener('change', refreshKPIs);
+    qs('#btn-logout').addEventListener('click', ()=>{
+      try{ localStorage.removeItem('planilla_email'); }catch{}
+      window.SESSION = {}; window.CURRENT_USER = null;
+      showLogin();
+    });
+  }
+
+  /*************** Boot ***************/
+  window.addEventListener('DOMContentLoaded', async ()=>{
+    wireTabs(); wireUI(); wireLogin();
+    // restaurar email guardado o usar admin por defecto
+    if(!window.SESSION.email){
+      try{ window.SESSION.email = localStorage.getItem('planilla_email')||''; }catch{}
+    }
+    if(!window.SESSION.email) window.SESSION.email = 'admin@empresa.com';
+
+    try{
+      // intento de auto-login
+      const u = await api('/api/login?email=' + encodeURIComponent(window.SESSION.email));
+      if(u && u.activo){ window.CURRENT_USER=u; window.SESSION.email=u.email; hideLogin(); }
+      else{ showLogin(); }
+    }catch{ showLogin(); }
+
+    await cargarEmpresasYUsuarios();
+  });
+  </script>
 </body>
 </html>

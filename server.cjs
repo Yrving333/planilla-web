@@ -1,10 +1,8 @@
-/**
- * server.cjs (v11) – Fix columna empresaid + robustez de guardado
- * - Correlativo por usuario (dni) con transacción
- * - Parser de montos (evita NaN)
- * - Solo inserta filas con monto > 0
- * - Bootstrap asegura empresaid en historial (ALTER IF NOT EXISTS)
- */
+// server.cjs  (v12 estable)
+// - Soporta GET /api/empresas?simple=1 (sin logos/base64)
+// - Corrige inserts en historial con empresaid
+// - Bootstrap idempotente de tablas/vistas/índices
+// - Endpoints: login, usuarios, empresas, counters, planillas, historial, health
 
 require('dotenv').config();
 const path = require('path');
@@ -12,7 +10,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 10000;
 const ADMIN_PIN = process.env.ADMIN_PIN || '1234';
 const TOPE = Number(process.env.TOPE || 45);
@@ -28,7 +26,7 @@ app.use(cors({
   credentials: true
 }));
 
-// ---------- utils ----------
+// --------- utils ----------
 const q   = (sql, p=[]) => pool.query(sql, p);
 const pad = (n,w=5)=> String(n).padStart(w,'0');
 const norm = s => (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
@@ -40,8 +38,6 @@ const normalizeFecha = (f)=>{
   return s;
 };
 const errMsg = (e, fb='Error inesperado') => e?.msg || e?.detail || e?.hint || (e?.code?`${fb} (PG:${e.code})`:fb);
-
-// "S/ 45,00" -> 45.00
 function toMoney(v){
   if(v === null || v === undefined) return 0;
   let s = String(v).trim();
@@ -52,7 +48,7 @@ function toMoney(v){
   return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
 }
 
-// ---------- bootstrap ----------
+// --------- bootstrap DB ----------
 async function bootstrap(){
   await q(`
     CREATE TABLE IF NOT EXISTS empresas (
@@ -89,7 +85,7 @@ async function bootstrap(){
       empresaid TEXT, created_at TIMESTAMP DEFAULT NOW()
     );
 
-    -- <<< ESTA LÍNEA GARANTIZA LA COLUMNA EN BD EXISTENTES >>>
+    -- por si faltaba la col antes
     ALTER TABLE historial ADD COLUMN IF NOT EXISTS empresaid TEXT;
 
     CREATE INDEX IF NOT EXISTS idx_historial_dni_fecha ON historial(dni,fecha);
@@ -114,17 +110,17 @@ async function bootstrap(){
       ON CONFLICT (id) DO NOTHING;
 
       INSERT INTO usuarios (email,dni,nombres,apellidos,role,rol,empresaid,proydef,proys,activo) VALUES
-      ('admin@empresa.com','44895702','YRVING','LEON','ADMIN_PADOVA','ADMIN_PADOVA','INV_PADOVA','ADMIN PADOVA','{}','1'),
+      ('admin@empresa.com','44895702','YRVING','LEON','ADMIN_PADOVA','ADMIN_PADOVA','INV_PADOVA','ADMIN PADOVA','{"ADMIN PADOVA","LITORAL 900"}','1'),
       ('usuario@empresa.com','44081950','JOEL','GARGATE','USUARIO','USUARIO','CONS_PADOVA','SANTA BEATRIZ','{"SANTA BEATRIZ"}','1')
       ON CONFLICT (email) DO NOTHING;
     `);
   }
 }
 
-// ---------- debug ----------
-app.get('/api/debug/ping', (_req,res)=> res.json({ok:true, ts:new Date().toISOString()}));
+// --------- debug ----------
+app.get('/api/health', (_req,res)=> res.json({ok:true, ts:new Date().toISOString()}));
 
-// ---------- públicas ----------
+// --------- públicas ----------
 app.get('/api/login', async (req,res)=>{
   try{
     const email = String(req.query.email||'').toLowerCase();
@@ -136,8 +132,14 @@ app.get('/api/login', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json(null); }
 });
 
-app.get('/api/empresas', async (_req,res)=>{
+app.get('/api/empresas', async (req,res)=>{
   try{
+    const simpleParam = String(req.query.simple ?? '').trim().toLowerCase();
+    const simple = (simpleParam === '1' || simpleParam === 'true' || simpleParam === 'yes');
+    if (simple) {
+      const {rows}=await q(`SELECT id,razon,ruc,direccion,telefono FROM empresas ORDER BY razon`);
+      return res.json(rows);
+    }
     const {rows}=await q(`SELECT id,razon,ruc,direccion,telefono,logo FROM empresas ORDER BY razon`);
     res.json(rows);
   }catch(e){ console.error(e); res.status(500).json([]); }
@@ -165,7 +167,6 @@ app.get('/api/counters/next', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json({ next:'00000' }); }
 });
 
-// ---------- planillas ----------
 app.post('/api/planillas', async (req,res)=>{
   const client = await pool.connect();
   const dbg = (label, obj)=> console.log(`[planillas] ${label}:`, JSON.stringify(obj).slice(0,400));
@@ -176,7 +177,7 @@ app.post('/api/planillas', async (req,res)=>{
       client.release(); return res.status(400).json({ ok:false, msg:'Payload inválido' });
     }
 
-    const normalized = (items||[]).map((it,i)=>({
+    const normalized = (items||[]).map(it=>({
       proyecto: norm(it.proyecto || ''),
       destino : norm(it.destino  || ''),
       motivo  : norm(it.motivo   || ''),
@@ -212,7 +213,6 @@ app.post('/api/planillas', async (req,res)=>{
     const serie = serieFromName(u.nombres, u.apellidos);
     const trabajador = `${u.nombres} ${u.apellidos}`;
 
-    const detalle=[];
     for(const it of normalized){
       await client.query(`
         INSERT INTO historial (dni,email,fecha,serie,num,trabajador,proyecto,destino,motivo,pc,monto,total,empresaid)
@@ -220,15 +220,12 @@ app.post('/api/planillas', async (req,res)=>{
       `,[ dni, String(email).toLowerCase(), fechaISO, serie, num,
           trabajador, it.proyecto || u.proydef || '', it.destino, it.motivo, it.pc,
           it.monto, it.monto, u.empresaid||null ]);
-      detalle.push({ proyecto: it.proyecto || u.proydef || '', destino: it.destino, motivo: it.motivo, pc: it.pc, monto: it.monto, total: it.monto });
     }
 
-    const emp = (await client.query(`SELECT id,razon,ruc,direccion,telefono,logo FROM empresas WHERE id=$1`, [u.empresaid||null])).rows[0] || null;
+    const emp = (await client.query(`SELECT id,razon,ruc,direccion,telefono FROM empresas WHERE id=$1`, [u.empresaid||null])).rows[0] || null;
 
     await client.query('COMMIT'); client.release();
-    const resp = { ok:true, serie, num, fecha:fechaISO, total: totalItems, empresa: emp, trabajador, detalle };
-    dbg('resp', {serie,num,fecha:fechaISO,total:totalItems,items:detalle.length});
-    res.json(resp);
+    res.json({ ok:true, serie, num, fecha:fechaISO, total: totalItems, empresa: emp, trabajador });
 
   }catch(e){
     try{ await client.query('ROLLBACK'); }catch(_){}
@@ -238,7 +235,6 @@ app.post('/api/planillas', async (req,res)=>{
   }
 });
 
-// ---------- historial ----------
 app.get('/api/historial', async (req,res)=>{
   try{
     const dni = req.query.dni ? String(req.query.dni) : null;
@@ -259,22 +255,12 @@ app.get('/api/historial/planilla', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json([]); }
 });
 
-app.get('/api/historial/by-date', async (req,res)=>{
-  try{
-    const dni = String(req.query.dni||''); const fecha = normalizeFecha(String(req.query.fecha||''));
-    if(!dni || !fecha) return res.status(400).json([]);
-    const {rows}=await q(`SELECT * FROM historial WHERE dni=$1 AND fecha=$2 ORDER BY id`, [dni,fecha]);
-    res.json(rows);
-  }catch(e){ console.error(e); res.status(500).json([]); }
-});
-
-// ---------- admin pin ----------
 app.post('/api/admin/pin', async (req,res)=>{
   try{ const pin = String(req.body?.pin||''); res.json({ ok: pin===ADMIN_PIN }); }
   catch(e){ console.error(e); res.status(500).json({ ok:false }); }
 });
 
-// ---------- static & start ----------
+// static
 app.use(express.static(path.join(__dirname,'public')));
 app.get('/', (_req,res)=> res.type('text').send('OK'));
 
