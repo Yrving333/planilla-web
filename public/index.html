@@ -249,220 +249,134 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script>
-/* =================== Estado global =================== */
-window.SESSION = window.SESSION || {};      // { email }
-window.CURRENT_USER = window.CURRENT_USER || null; // usuario logueado / seleccionado
+window.SESSION = window.SESSION || {};
+window.CURRENT_USER = window.CURRENT_USER || null;
 const STATE = { empresas: [], usuarios: [] };
 
-/* =================== Helpers =================== */
-const qs  = sel => document.querySelector(sel);
-const qsa = sel => Array.from(document.querySelectorAll(sel));
+const qs  = s => document.querySelector(s);
+const qsa = s => Array.from(document.querySelectorAll(s));
 
-function toMoney(v) {
-  if (v === null || v === undefined) return 0;
-  let s = String(v).trim();
-  s = s.replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
-  const parts = s.split('.');
-  if (parts.length > 2) { const last = parts.pop(); s = parts.join('') + '.' + last; }
-  const n = parseFloat(s);
-  return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
-}
+function toMoney(v){ if(v==null) return 0; let s=String(v).trim().replace(/,/g,'.').replace(/[^0-9.\-]/g,''); const p=s.split('.'); if(p.length>2){const l=p.pop(); s=p.join('')+'.'+l;} const n=parseFloat(s); return Number.isFinite(n)?Number(n.toFixed(2)):0; }
 
-async function api(path, opt = {}) {
-  const r = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    ...opt
-  });
-  let data = null;
-  try { data = await r.json(); } catch {}
-  if (!r.ok) {
-    const message = (data && (data.msg || data.error)) || `HTTP ${r.status}`;
-    throw { ...data, status: r.status, msg: message, error: message };
-  }
+async function api(path,opt={}){
+  const r = await fetch(path, { headers:{'Content-Type':'application/json'}, credentials:'same-origin', ...opt });
+  let data=null; try{ data=await r.json(); }catch{}
+  if(!r.ok){ const msg=(data&&(data.msg||data.error))||`HTTP ${r.status}`; throw {...data,status:r.status,msg}; }
   return data;
 }
 
-/* =================== Carga base (empresas/usuarios) =================== */
-async function cargarEmpresasYUsuarios() {
-  // Pedimos empresas “livianas” (sin logo) para acelerar la UI
-  STATE.empresas = await api('/api/empresas?simple=1');
+async function cargarEmpresasYUsuarios(){
+  // empresas con fallback
+  try { STATE.empresas = await api('/api/empresas?simple=1'); }
+  catch { STATE.empresas = await api('/api/empresas'); }
+
+  // usuarios
   STATE.usuarios = await api('/api/usuarios');
 
-  // Si ya hay sesión, fijamos el CURRENT_USER por email; si no, escogemos el admin o el primero activo
-  const email = (window.SESSION && window.SESSION.email) || 'admin@empresa.com';
-  let u = STATE.usuarios.find(x => x.email.toLowerCase() === email.toLowerCase());
-  if (!u) u = STATE.usuarios.find(x => x.activo) || STATE.usuarios[0] || null;
+  // login por defecto si no hay SESSION
+  const email = (window.SESSION.email) || 'admin@empresa.com';
+  let u = null;
+  try { u = await api('/api/login?email=' + encodeURIComponent(email)); }
+  catch { u = null; }
+  if (!u){ u = STATE.usuarios.find(x=>x.email?.toLowerCase()===email.toLowerCase()) || STATE.usuarios.find(x=>x.activo) || STATE.usuarios[0] || null; }
   window.CURRENT_USER = u || null;
 
   renderEmpresaHeader();
   llenarTrabajadores();
-  onTrabajadorChange(); // recalcula proyecto por defecto, acumulados, etc. si ya lo tienes
+
+  if (typeof window.onTrabajadorChange === 'function') window.onTrabajadorChange();
+  if (typeof window.renderRows === 'function') window.renderRows();
 }
 
-/* =================== Header: razón social + RUC =================== */
-function renderEmpresaHeader() {
-  const emp = STATE.empresas.find(e => e.id === (CURRENT_USER?.empresaid || ''));
-  const razonEl = qsa('.emp-razon'); // coloca <span class="emp-razon"></span> en tu header si quieres
-  const rucEl   = qsa('.emp-ruc');   // y <span class="emp-ruc"></span>
+function renderEmpresaHeader(){
+  const empId = CURRENT_USER?.empresaid || '';
+  const emp = STATE.empresas.find(e => e.id === empId);
   const razon = emp ? emp.razon : '—';
   const ruc   = emp ? emp.ruc   : '—';
 
-  // Tu HTML actual muestra “—” fijo; si deseas, márcalo con estas clases y lo rellenamos:
-  razonEl.forEach(el => el.textContent = razon);
-  rucEl.forEach(el   => el.textContent = ruc);
-
-  // Si no usas esas clases, y tienes IDs específicos, descomenta:
-  // if (qs('#razon')) qs('#razon').textContent = razon;
-  // if (qs('#ruc'))   qs('#ruc').textContent   = ruc;
+  const razonEls = qsa('.emp-razon'); const rucEls = qsa('.emp-ruc');
+  razonEls.forEach(el => el.textContent = razon);
+  rucEls.forEach(el => el.textContent = ruc);
+  if (qs('#razon')) qs('#razon').textContent = razon;
+  if (qs('#ruc'))   qs('#ruc').textContent   = ruc;
 }
 
-/* =================== Select de trabajador =================== */
-function llenarTrabajadores() {
+function llenarTrabajadores(){
   const sel = qs('#sel-trabajador') || qs('select[name="trabajador"]');
   if (!sel) return;
   sel.innerHTML = '';
-  STATE.usuarios
-    .filter(u => u.activo)
-    .forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = u.email;
-      opt.textContent = `${u.nombres} ${u.apellidos}`;
-      if (CURRENT_USER && u.email.toLowerCase() === CURRENT_USER.email.toLowerCase()) opt.selected = true;
-      sel.appendChild(opt);
-    });
-
-  sel.onchange = () => {
+  STATE.usuarios.filter(u=>u.activo).forEach(u=>{
+    const opt=document.createElement('option');
+    opt.value=u.email; opt.textContent=`${u.nombres} ${u.apellidos}`;
+    if (CURRENT_USER && u.email.toLowerCase()===CURRENT_USER.email.toLowerCase()) opt.selected=true;
+    sel.appendChild(opt);
+  });
+  sel.onchange = ()=>{
     const email = sel.value;
-    const u = STATE.usuarios.find(x => x.email.toLowerCase() === email.toLowerCase());
-    if (u) {
-      window.CURRENT_USER = u;
-      renderEmpresaHeader();
-      if (window.onTrabajadorChange) onTrabajadorChange();
-    }
+    const u = STATE.usuarios.find(x=>x.email.toLowerCase()===email.toLowerCase());
+    if(u){ window.CURRENT_USER=u; renderEmpresaHeader(); if(typeof window.onTrabajadorChange==='function') window.onTrabajadorChange(); }
   };
 }
 
-/* =================== Guardar + PDF =================== */
-async function guardarPlanilla() {
-  if (!CURRENT_USER) { alert('Seleccione un trabajador.'); return; }
-
+async function guardarPlanilla(){
+  if(!CURRENT_USER){ alert('Seleccione un trabajador.'); return; }
   const fecha = qs('#f-emision')?.value || '';
-  const items = [];
-  qsa('.trow').forEach(r => {
-    const destino  = (r.querySelector('.destino')?.value || '').trim().toUpperCase();
-    const motivo   = (r.querySelector('.motivo')?.value  || '').trim().toUpperCase();
-    const proyecto = (r.querySelector('.proyecto')?.value|| '').trim().toUpperCase();
-    const pc       = (r.querySelector('.pc')?.value      || '').trim();
+  const items=[];
+  qsa('.trow').forEach(r=>{
+    const destino  = (r.querySelector('.destino')?.value||'').trim().toUpperCase();
+    const motivo   = (r.querySelector('.motivo') ?.value||'').trim().toUpperCase();
+    const proyecto = (r.querySelector('.proyecto')?.value||'').trim().toUpperCase();
+    const pc       = (r.querySelector('.pc')      ?.value||'').trim();
     const monto    = toMoney(r.querySelector('.monto')?.value);
-    if (monto > 0) items.push({ destino, motivo, proyecto, pc, monto });
+    if (monto>0) items.push({destino,motivo,proyecto,pc,monto});
   });
-  if (!items.length) { alert('Ingrese al menos un ítem con monto.'); return; }
+  if(items.length===0){ alert('Ingrese al menos un ítem con monto.'); return; }
 
-  const btn = qs('#btn-save'); if (btn) btn.disabled = true;
-  try {
-    const res = await api('/api/planillas', {
-      method: 'POST',
-      body: JSON.stringify({
-        dni: CURRENT_USER.dni,
-        email: (window.SESSION?.email || CURRENT_USER.email),
-        fecha,
-        items
-      })
-    });
+  const btn = qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar');
+  if (btn) btn.disabled = true;
 
-    await renderPDF({
-      fecha: res.fecha || fecha,
-      items,
-      total: res.total,
-      serie: res.serie,
-      num:   res.num,
-      emp:   res.empresa,
-      u:     CURRENT_USER
-    });
-
+  try{
+    const res = await api('/api/planillas',{ method:'POST', body: JSON.stringify({
+      dni: CURRENT_USER.dni,
+      email: (window.SESSION?.email || CURRENT_USER.email),
+      fecha, items
+    })});
+    await renderPDF({ fecha: res.fecha||fecha, items, total: res.total, serie: res.serie, num: res.num, emp: res.empresa, u: CURRENT_USER });
     alert(`Planilla ${res.serie}-${res.num} guardada y exportada.`);
-    if (window.renderRows) renderRows();
-    if (window.onTrabajadorChange) onTrabajadorChange();
-    if (window.renderHistorial) renderHistorial();
-
-  } catch (e) {
+    if (typeof window.renderHistorial==='function') window.renderHistorial();
+  }catch(e){
     alert(e?.msg || e?.error || 'Error al guardar.');
     console.error('Guardar planilla - error:', e);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
+  }finally{ if(btn) btn.disabled=false; }
 }
 
-/* =================== PDF simple (sin plugins) =================== */
-async function renderPDF({ fecha, items, total, serie, num, emp, u }) {
+async function renderPDF({ fecha, items, total, serie, num, emp, u }){
   const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (!jsPDFCtor) throw new Error('No se pudo cargar jsPDF');
+  const doc = new jsPDFCtor({ unit:'pt', format:'a4' });
 
-  const doc = new jsPDFCtor({ unit: 'pt', format: 'a4' });
-
-  // Header
-  const razon = (emp && emp.razon) || 'PADOVA';
-  const ruc   = (emp && emp.ruc)   || '—';
-  doc.setFontSize(12);
-  doc.text(razon, 40, 40);
-  doc.text(`R.U.C.: ${ruc}`, 40, 58);
-  doc.setFontSize(14);
-  doc.text('PLANILLA DE MOVILIDAD', 300, 40, { align:'center' });
-  doc.text(`Planilla Nro. ${serie}-${num}`, 300, 58, { align:'center' });
-
+  const razon = (emp&&emp.razon)||'PADOVA'; const ruc=(emp&&emp.ruc)||'—';
+  doc.setFontSize(12); doc.text(razon,40,40); doc.text(`R.U.C.: ${ruc}`,40,58);
+  doc.setFontSize(14); doc.text('PLANILLA DE MOVILIDAD',300,40,{align:'center'}); doc.text(`Planilla Nro. ${serie}-${num}`,300,58,{align:'center'});
   doc.setFontSize(10);
   const trabajador = `${(u?.nombres||'').toUpperCase()} ${(u?.apellidos||'').toUpperCase()}  DNI: ${u?.dni||''}`;
-  doc.text(`Fecha de Emisión: ${fecha}`, 40, 90);
-  doc.text(`Trabajador: ${trabajador}`, 40, 108);
+  doc.text(`Fecha de Emisión: ${fecha}`,40,90); doc.text(`Trabajador: ${trabajador}`,40,108);
 
-  // Tabla
-  let y = 140;
-  const cols = ['#','DESTINO','MOTIVO','PROYECTO','PC','MONTO (S/)'];
-  const widths = [24, 120, 120, 140, 60, 80];
-
-  const drawRow = (cells, yPos, isHeader=false) => {
-    let x = 40;
-    for (let i = 0; i < cells.length; i++) {
-      doc.rect(x, yPos, widths[i], 22);
-      doc.setFontSize(isHeader ? 10 : 9);
-      doc.text(String(cells[i] ?? ''), x + 3, yPos + 14);
-      x += widths[i];
-    }
-  };
-
-  drawRow(cols, y, true); y += 22;
-
-  items.forEach((it, idx) => {
-    if (y > 760) { doc.addPage(); y = 40; }
-    drawRow([
-      idx+1,
-      (it.destino||'').toString().toUpperCase(),
-      (it.motivo ||'').toString().toUpperCase(),
-      (it.proyecto||'').toString().toUpperCase(),
-      (it.pc||'').toString(),
-      Number(it.monto||0).toFixed(2)
-    ], y);
-    y += 22;
-  });
-
-  y += 10;
-  doc.setFontSize(12);
-  doc.text(`Total: S/ ${Number(total||0).toFixed(2)}`, 40, y + 20);
-
+  let y=140; const cols=['#','DESTINO','MOTIVO','PROYECTO','PC','MONTO (S/)']; const w=[24,120,120,140,60,80];
+  const row=(c,yy,h=false)=>{ let x=40; for(let i=0;i<c.length;i++){ doc.rect(x,yy,w[i],22); doc.setFontSize(h?10:9); doc.text(String(c[i]??''), x+3, yy+14); x+=w[i]; } };
+  row(cols,y,true); y+=22;
+  items.forEach((it,ix)=>{ if(y>760){ doc.addPage(); y=40; } row([ix+1,(it.destino||'').toString().toUpperCase(),(it.motivo||'').toString().toUpperCase(),(it.proyecto||'').toString().toUpperCase(),(it.pc||'').toString(), Number(it.monto||0).toFixed(2)], y); y+=22; });
+  y+=10; doc.setFontSize(12); doc.text(`Total: S/ ${Number(total||0).toFixed(2)}`,40,y+20);
   doc.save(`${serie}-${num}.pdf`);
 }
 
-/* =================== Wire-up =================== */
-window.addEventListener('DOMContentLoaded', async () => {
-  try {
-    // Si tu login ya puso SESSION.email, lo aprovechamos. Si no, admin por defecto.
-    if (!window.SESSION.email) window.SESSION.email = 'admin@empresa.com';
+window.addEventListener('DOMContentLoaded', async ()=>{
+  try{
+    if(!window.SESSION.email) window.SESSION.email='admin@empresa.com';
     await cargarEmpresasYUsuarios();
-
-    const btn = qs('#btn-save') || qs('#btn-guardar') || qs('#btn-exportar');
-    if (btn) btn.addEventListener('click', guardarPlanilla);
-  } catch (e) {
+    const btn = qs('#btn-save')||qs('#btn-guardar')||qs('#btn-exportar');
+    if(btn) btn.addEventListener('click', guardarPlanilla);
+  }catch(e){
     console.error('Boot UI error:', e);
     alert('No se pudo cargar datos base.');
   }
