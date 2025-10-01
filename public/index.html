@@ -247,479 +247,225 @@
     </div>
   </div>
 </div>
-
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script>
-/* ===================== CONFIG ===================== */
-const TOPE = 45.00;
-const PC_CODES = ['94303','95301','95303','234120502','234120503'];
-window.jsPDF = window.jspdf.jsPDF;
+/* =================== Estado global =================== */
+window.SESSION = window.SESSION || {};      // { email }
+window.CURRENT_USER = window.CURRENT_USER || null; // usuario logueado / seleccionado
+const STATE = { empresas: [], usuarios: [] };
 
-/* ======= Estado ======= */
-let ADMIN_OK=false, EDITING_DNI=null, CURRENT_USER=null, HIST_EDIT=false, LAST_EXCEDE=false;
-let SESSION={email:null,display:null,dni:null,rol:null};
-let CACHE={empresas:[], usuarios:[], historial:[]};
-
-/* ======= Util ======= */
-const fmt=n=>'S/ '+Number(n||0).toFixed(2);
-const normalizar=t=>(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-const serieFromName=(n,a)=>(n.slice(0,2)+a.slice(0,2)).toUpperCase()+'001';
-const qs = sel => document.querySelector(sel);
+/* =================== Helpers =================== */
+const qs  = sel => document.querySelector(sel);
 const qsa = sel => Array.from(document.querySelectorAll(sel));
 
-function setHeaderEmpresa(emp){
-  const logo=qs('#logo'), cinfo=qs('#cinfo');
-  if(emp){ if(emp.logo){ try{logo.src=emp.logo;logo.style.display='block';}catch{logo.style.display='none';} } else logo.style.display='none';
-    cinfo.innerHTML=`<b>${emp.razon||''}</b><br>R.U.C. ${emp.ruc||''}<br><span id="caddr">${emp.direccion||''}</span>`;
-  }else{ logo.style.display='none'; cinfo.innerHTML=`<b>—</b><br>R.U.C. —<br><span id="caddr"></span>`; }
+function toMoney(v) {
+  if (v === null || v === undefined) return 0;
+  let s = String(v).trim();
+  s = s.replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
+  const parts = s.split('.');
+  if (parts.length > 2) { const last = parts.pop(); s = parts.join('') + '.' + last; }
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
 }
 
-/* ======= API ======= */
-async function api(path, opt={}) {
-  const r = await fetch(path, {headers:{'Content-Type':'application/json'}, credentials:'same-origin', ...opt});
-  if(!r.ok) throw await r.json().catch(()=>({error:`HTTP ${r.status}`})); 
-  return r.json();
-}
-
-/* ======= Login ======= */
-async function localLogin(){
-  const email=(qs('#local-email').value||'').trim().toLowerCase();
-  if(!email){ alert('Escribe un email.'); return; }
-  const u = await api(`/api/login?email=${encodeURIComponent(email)}`);
-  if(!u || !u.activo){ alert('Usuario no existe o inactivo.'); return; }
-  SESSION={email:u.email,display:`${u.nombres} ${u.apellidos}`,dni:u.dni,rol:u.rol};
-  qs('#who').textContent=`Conectado: ${SESSION.display} — ${SESSION.email} — Rol: ${SESSION.rol}`;
-  qs('#login-overlay').style.display='none';
-  qs('#btn-login').style.display='none';
-  qs('#btn-logout').style.display='inline-block';
-  await loadAll();
-  applySessionUI();
-  initMainUI();
-}
-
-/* ======= Carga ======= */
-async function loadAll(){
-  CACHE.empresas = await api('/api/empresas');
-  CACHE.usuarios  = await api('/api/usuarios');
-}
-function isAdmin(){ return SESSION.rol==='ADMIN_PADOVA'; }
-function applySessionUI(){
-  const isA=isAdmin();
-  qs('#tab-admin').style.display=isA?'inline-block':'none';
-  qs('#btn-new-worker').style.display=isA?'inline-block':'none';
-  qs('#btn-edit-worker').style.display=isA?'inline-block':'none';
-  qs('#hist-admin-actions').style.display=isA?'flex':'none';
-  if(!isA){ HIST_EDIT=false; }
-  qs('#hist-save').style.display=(isA && HIST_EDIT)?'inline-block':'none';
-  qs('#hist-del').style.display=(isA && HIST_EDIT)?'inline-block':'none';
-}
-
-/* ======= UI ======= */
-function todayISO(){ return new Date().toISOString().split('T')[0]; }
-function initMainUI(){
-  qs('#f-emision').value=todayISO();
-  renderTrabajadoresSelect(); renderRows(); onTrabajadorChange(); renderHistorial();
-}
-function getEmpresaById(id){ return CACHE.empresas.find(e=>e.id===id); }
-
-function renderTrabajadoresSelect(){
-  const sel=qs('#sel-trabajador'); sel.innerHTML='';
-  const users=CACHE.usuarios.filter(u=>u.activo);
-  const list=isAdmin()?users:users.filter(u=>u.email?.toLowerCase()===SESSION.email);
-  list.forEach(u=>{const o=document.createElement('option');o.value=u.dni;o.textContent=`${u.nombres} ${u.apellidos}`;sel.appendChild(o);});
-  // <-- preferir SIEMPRE el propio usuario logueado
-  if(list.some(u=>u.dni===SESSION.dni)) sel.value=SESSION.dni;
-  else if(list.length>0) sel.value=list[0].dni;
-}
-async function updateSerieHeader(){
-  const serie=serieFromName(normalizar(CURRENT_USER.nombres),normalizar(CURRENT_USER.apellidos));
-  try{
-    const r = await api(`/api/counters/next?dni=${encodeURIComponent(CURRENT_USER.dni)}`);
-    const num = r?.next || '00000';
-    qs('#h-num').textContent=`Planilla Nro. ${serie}-${num}`;
-  }catch{
-    qs('#h-num').textContent=`Planilla Nro. ${serie}-xxxxx`;
+async function api(path, opt = {}) {
+  const r = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    ...opt
+  });
+  let data = null;
+  try { data = await r.json(); } catch {}
+  if (!r.ok) {
+    const message = (data && (data.msg || data.error)) || `HTTP ${r.status}`;
+    throw { ...data, status: r.status, msg: message, error: message };
   }
-}
-async function onTrabajadorChange(){
-  const dni=qs('#sel-trabajador').value;
-  CURRENT_USER = CACHE.usuarios.find(u=>u.dni===dni)||null;
-  const proy=qs('#p-proy');
-  if(CURRENT_USER){
-    await updateSerieHeader();
-    proy.textContent=`PROYECTO PRINCIPAL: ${CURRENT_USER.proydef||CURRENT_USER.proyDef||'—'}`;
-  }else{
-    qs('#h-num').textContent='PLANILLA DE MOVILIDAD'; proy.textContent='PROYECTO PRINCIPAL: —';
-  }
-  setHeaderEmpresa(CURRENT_USER?getEmpresaById(CURRENT_USER.empresaid||CURRENT_USER.empresaId):null);
-  refreshProyectoControls();
-  updateTotalsUI();
+  return data;
 }
 
-/* ======= Filas ======= */
-function renderRows(){
-  const rows=qs('#rows'); rows.innerHTML='';
-  for(let i=1;i<=5;i++){
-    const r=document.createElement('div'); r.className='trow';
-    r.innerHTML=`
-      <span class="num">${i}</span>
-      <input class="destino uppercase" placeholder="DESTINO">
-      <input class="motivo uppercase" placeholder="MOTIVO">
-      <div class="proy-cell"></div>
-      <select class="pc">${PC_CODES.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
-      <input type="number" class="monto" min="0" step="0.01" placeholder="0.00">
-    `;
-    rows.appendChild(r);
-  }
-  refreshProyectoControls();
+/* =================== Carga base (empresas/usuarios) =================== */
+async function cargarEmpresasYUsuarios() {
+  // Pedimos empresas “livianas” (sin logo) para acelerar la UI
+  STATE.empresas = await api('/api/empresas?simple=1');
+  STATE.usuarios = await api('/api/usuarios');
+
+  // Si ya hay sesión, fijamos el CURRENT_USER por email; si no, escogemos el admin o el primero activo
+  const email = (window.SESSION && window.SESSION.email) || 'admin@empresa.com';
+  let u = STATE.usuarios.find(x => x.email.toLowerCase() === email.toLowerCase());
+  if (!u) u = STATE.usuarios.find(x => x.activo) || STATE.usuarios[0] || null;
+  window.CURRENT_USER = u || null;
+
+  renderEmpresaHeader();
+  llenarTrabajadores();
+  onTrabajadorChange(); // recalcula proyecto por defecto, acumulados, etc. si ya lo tienes
 }
-function refreshProyectoControls(){
-  const canChoose=CURRENT_USER&&isAdmin();
-  const list=(CURRENT_USER?.proyectos||(CURRENT_USER?.proys||[]));
-  qsa('.proy-cell').forEach(cell=>{
-    cell.innerHTML='';
-    if(canChoose){
-      const sel=document.createElement('select'); sel.className='proyecto uppercase';
-      list.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;sel.appendChild(o);});
-      cell.appendChild(sel);
-    }else{
-      const inp=document.createElement('input'); inp.className='proyecto uppercase'; inp.readOnly=true; inp.value=(CURRENT_USER?.proydef||CURRENT_USER?.proyDef||''); cell.appendChild(inp);
+
+/* =================== Header: razón social + RUC =================== */
+function renderEmpresaHeader() {
+  const emp = STATE.empresas.find(e => e.id === (CURRENT_USER?.empresaid || ''));
+  const razonEl = qsa('.emp-razon'); // coloca <span class="emp-razon"></span> en tu header si quieres
+  const rucEl   = qsa('.emp-ruc');   // y <span class="emp-ruc"></span>
+  const razon = emp ? emp.razon : '—';
+  const ruc   = emp ? emp.ruc   : '—';
+
+  // Tu HTML actual muestra “—” fijo; si deseas, márcalo con estas clases y lo rellenamos:
+  razonEl.forEach(el => el.textContent = razon);
+  rucEl.forEach(el   => el.textContent = ruc);
+
+  // Si no usas esas clases, y tienes IDs específicos, descomenta:
+  // if (qs('#razon')) qs('#razon').textContent = razon;
+  // if (qs('#ruc'))   qs('#ruc').textContent   = ruc;
+}
+
+/* =================== Select de trabajador =================== */
+function llenarTrabajadores() {
+  const sel = qs('#sel-trabajador') || qs('select[name="trabajador"]');
+  if (!sel) return;
+  sel.innerHTML = '';
+  STATE.usuarios
+    .filter(u => u.activo)
+    .forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.email;
+      opt.textContent = `${u.nombres} ${u.apellidos}`;
+      if (CURRENT_USER && u.email.toLowerCase() === CURRENT_USER.email.toLowerCase()) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+  sel.onchange = () => {
+    const email = sel.value;
+    const u = STATE.usuarios.find(x => x.email.toLowerCase() === email.toLowerCase());
+    if (u) {
+      window.CURRENT_USER = u;
+      renderEmpresaHeader();
+      if (window.onTrabajadorChange) onTrabajadorChange();
     }
+  };
+}
+
+/* =================== Guardar + PDF =================== */
+async function guardarPlanilla() {
+  if (!CURRENT_USER) { alert('Seleccione un trabajador.'); return; }
+
+  const fecha = qs('#f-emision')?.value || '';
+  const items = [];
+  qsa('.trow').forEach(r => {
+    const destino  = (r.querySelector('.destino')?.value || '').trim().toUpperCase();
+    const motivo   = (r.querySelector('.motivo')?.value  || '').trim().toUpperCase();
+    const proyecto = (r.querySelector('.proyecto')?.value|| '').trim().toUpperCase();
+    const pc       = (r.querySelector('.pc')?.value      || '').trim();
+    const monto    = toMoney(r.querySelector('.monto')?.value);
+    if (monto > 0) items.push({ destino, motivo, proyecto, pc, monto });
   });
-}
-function currentTotal(){ return qsa('.monto').reduce((s,el)=>s+(parseFloat(el.value)||0),0); }
+  if (!items.length) { alert('Ingrese al menos un ítem con monto.'); return; }
 
-/* ======= Tope ======= */
-async function getAcumuladoDia(dni,fecha){
-  const r = await api(`/api/historial/acumulado?dni=${encodeURIComponent(dni)}&fecha=${encodeURIComponent(fecha)}`);
-  return Number(r.acumulado||0);
-}
-async function updateTotalsUI(alerta=false){
-  const fecha=qs('#f-emision').value, dni=CURRENT_USER?.dni;
-  const total=currentTotal();
-  let acum=0;
-  if(dni && fecha) { try{acum=await getAcumuladoDia(dni,fecha);}catch{acum=0;} }
-  const disp=Math.max(0,TOPE-acum-total);
-  qs('#pill-acum').textContent=fmt(acum);
-  qs('#pill-disp').textContent=fmt(disp);
-  const exceed=(acum+total)>TOPE;
-  const totalEl=qs('#total'); totalEl.textContent=fmt(total);
-  totalEl.classList.toggle('ok',!exceed); totalEl.classList.toggle('bad',exceed);
-  qs('#btn-save').disabled=exceed||!CURRENT_USER;
-  qs('#over-alert').style.display=exceed?'block':'none';
-  if(alerta && exceed && !LAST_EXCEDE){ alert('No puedes superar S/ 45 por día/usuario.'); }
-  LAST_EXCEDE=exceed;
-}
+  const btn = qs('#btn-save'); if (btn) btn.disabled = true;
+  try {
+    const res = await api('/api/planillas', {
+      method: 'POST',
+      body: JSON.stringify({
+        dni: CURRENT_USER.dni,
+        email: (window.SESSION?.email || CURRENT_USER.email),
+        fecha,
+        items
+      })
+    });
 
-/* ======= Historial ======= */
-async function renderHistorial(){
-  if(!isAdmin() || !ADMIN_OK){ HIST_EDIT=false; }
-  const wrap=qs('#hist');
-  const list = await api('/api/historial?scope='+(isAdmin()?'all':'mine'));
-  CACHE.historial = list;
-  if(!HIST_EDIT){
-    if(list.length===0){ wrap.innerHTML='<p style="color:#6b7280">No hay registros guardados.</p>'; return; }
-    let html=`<table class="tbl"><thead><tr>
-      <th class="w-s">#</th><th class="w-m">Serie</th><th class="w-m">Número</th><th class="w-m">Fecha</th>
-      <th class="w-l">Trabajador</th><th class="w-l">Proyecto</th><th class="w-l">Destino</th><th class="w-l">Motivo</th>
-      <th class="w-m">PC</th><th class="w-m">Monto</th><th class="w-m">Total</th>
-    </tr></thead><tbody>`;
-    list.slice().reverse().forEach(r=>{
-      html+=`<tr>
-        <td class="center">${r.id}</td><td>${r.serie}</td><td>${r.num}</td><td>${r.fecha}</td>
-        <td>${r.trabajador}</td><td>${r.proyecto}</td><td>${r.destino}</td><td>${r.motivo}</td>
-        <td>${r.pc}</td><td>${fmt(r.monto)}</td><td>${fmt(r.total)}</td>
-      </tr>`;
+    await renderPDF({
+      fecha: res.fecha || fecha,
+      items,
+      total: res.total,
+      serie: res.serie,
+      num:   res.num,
+      emp:   res.empresa,
+      u:     CURRENT_USER
     });
-    html+='</tbody></table>'; wrap.innerHTML=html;
-  }else{
-    let html=`<table class="tbl"><thead><tr>
-      <th class="center w-s">Sel</th><th class="w-s">#</th><th class="w-m">Serie</th><th class="w-m">Número</th><th class="w-m">Fecha</th>
-      <th class="w-l">Trabajador</th><th class="w-l">Proyecto</th><th class="w-l">Destino</th><th class="w-l">Motivo</th>
-      <th class="w-m">PC</th><th class="w-m">Monto</th><th class="w-m">Total</th>
-    </tr></thead><tbody>`;
-    list.slice().reverse().forEach(r=>{
-      html+=`<tr data-rid="${r.id}">
-        <td class="center"><input type="checkbox" class="rowchk"></td>
-        <td class="center">${r.id}</td>
-        <td><input value="${r.serie}" class="uppercase w-m"></td>
-        <td><input value="${r.num}" class="w-m"></td>
-        <td><input value="${r.fecha}" class="w-m"></td>
-        <td><input value="${r.trabajador}" class="uppercase w-l"></td>
-        <td><input value="${r.proyecto}" class="uppercase w-l"></td>
-        <td><input value="${r.destino}" class="uppercase w-l"></td>
-        <td><input value="${r.motivo}" class="uppercase w-l"></td>
-        <td><select class="w-m">${PC_CODES.map(c=>`<option value="${c}" ${c===r.pc?'selected':''}>${c}</option>`).join('')}</select></td>
-        <td><input value="${Number(r.monto).toFixed(2)}" class="w-m"></td>
-        <td><input value="${Number(r.total).toFixed(2)}" class="w-m"></td>
-      </tr>`;
-    });
-    html+='</tbody></table>'; wrap.innerHTML=html;
+
+    alert(`Planilla ${res.serie}-${res.num} guardada y exportada.`);
+    if (window.renderRows) renderRows();
+    if (window.onTrabajadorChange) onTrabajadorChange();
+    if (window.renderHistorial) renderHistorial();
+
+  } catch (e) {
+    alert(e?.msg || e?.error || 'Error al guardar.');
+    console.error('Guardar planilla - error:', e);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
-/* ======= Guardar + PDF ======= */
-async function guardarPlanilla(){
-  if(!CURRENT_USER){ alert('Seleccione un trabajador.'); return; }
-  const fecha=qs('#f-emision').value;
-  const items=[]; qsa('.trow').forEach(r=>{
-    const destino=r.querySelector('.destino').value.trim().toUpperCase();
-    const motivo=r.querySelector('.motivo').value.trim().toUpperCase();
-    const proyecto=(r.querySelector('.proyecto')?.value||'').trim().toUpperCase();
-    const pc=r.querySelector('.pc').value.trim();
-    const monto=parseFloat(r.querySelector('.monto').value)||0;
-    if(monto>0){ items.push({destino,motivo,proyecto,pc,monto}); }
-  });
-  if(items.length===0){ alert('Ingrese al menos un ítem con monto.'); return; }
+/* =================== PDF simple (sin plugins) =================== */
+async function renderPDF({ fecha, items, total, serie, num, emp, u }) {
+  const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!jsPDFCtor) throw new Error('No se pudo cargar jsPDF');
 
-  try{
-    const res = await api('/api/planillas',{method:'POST', body:JSON.stringify({
-      dni: CURRENT_USER.dni, email: SESSION.email, fecha, items
-    })});
-    const {serie,num,total,empresa} = res;
-    await renderPDF({fecha, items, total, serie, num, emp:empresa, u:CURRENT_USER});
-    alert(`Planilla ${serie}-${num} guardada y exportada.`);
-    renderRows(); onTrabajadorChange(); renderHistorial();
-  }catch(e){
-    if(e && e.error && e.remaining!==undefined){
-      alert(`${e.error}. Disponible: ${fmt(e.remaining)}.`);
-      updateTotalsUI(true);
-    }else{
-      alert(e?.error || 'Error al guardar.');
+  const doc = new jsPDFCtor({ unit: 'pt', format: 'a4' });
+
+  // Header
+  const razon = (emp && emp.razon) || 'PADOVA';
+  const ruc   = (emp && emp.ruc)   || '—';
+  doc.setFontSize(12);
+  doc.text(razon, 40, 40);
+  doc.text(`R.U.C.: ${ruc}`, 40, 58);
+  doc.setFontSize(14);
+  doc.text('PLANILLA DE MOVILIDAD', 300, 40, { align:'center' });
+  doc.text(`Planilla Nro. ${serie}-${num}`, 300, 58, { align:'center' });
+
+  doc.setFontSize(10);
+  const trabajador = `${(u?.nombres||'').toUpperCase()} ${(u?.apellidos||'').toUpperCase()}  DNI: ${u?.dni||''}`;
+  doc.text(`Fecha de Emisión: ${fecha}`, 40, 90);
+  doc.text(`Trabajador: ${trabajador}`, 40, 108);
+
+  // Tabla
+  let y = 140;
+  const cols = ['#','DESTINO','MOTIVO','PROYECTO','PC','MONTO (S/)'];
+  const widths = [24, 120, 120, 140, 60, 80];
+
+  const drawRow = (cells, yPos, isHeader=false) => {
+    let x = 40;
+    for (let i = 0; i < cells.length; i++) {
+      doc.rect(x, yPos, widths[i], 22);
+      doc.setFontSize(isHeader ? 10 : 9);
+      doc.text(String(cells[i] ?? ''), x + 3, yPos + 14);
+      x += widths[i];
     }
+  };
+
+  drawRow(cols, y, true); y += 22;
+
+  items.forEach((it, idx) => {
+    if (y > 760) { doc.addPage(); y = 40; }
+    drawRow([
+      idx+1,
+      (it.destino||'').toString().toUpperCase(),
+      (it.motivo ||'').toString().toUpperCase(),
+      (it.proyecto||'').toString().toUpperCase(),
+      (it.pc||'').toString(),
+      Number(it.monto||0).toFixed(2)
+    ], y);
+    y += 22;
+  });
+
+  y += 10;
+  doc.setFontSize(12);
+  doc.text(`Total: S/ ${Number(total||0).toFixed(2)}`, 40, y + 20);
+
+  doc.save(`${serie}-${num}.pdf`);
+}
+
+/* =================== Wire-up =================== */
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    // Si tu login ya puso SESSION.email, lo aprovechamos. Si no, admin por defecto.
+    if (!window.SESSION.email) window.SESSION.email = 'admin@empresa.com';
+    await cargarEmpresasYUsuarios();
+
+    const btn = qs('#btn-save') || qs('#btn-guardar') || qs('#btn-exportar');
+    if (btn) btn.addEventListener('click', guardarPlanilla);
+  } catch (e) {
+    console.error('Boot UI error:', e);
+    alert('No se pudo cargar datos base.');
   }
-}
-
-async function renderPDF({fecha,items,total,serie,num,emp,u}){
-  const doc=new jsPDF();
-  if(emp?.logo){ try{doc.addImage(emp.logo, emp.logo.startsWith('data:image/png')?'PNG':'JPEG', 15, 12, 38, 10);}catch{} }
-  doc.setFontSize(8); doc.setFont(undefined,'bold'); doc.text(emp?.razon||'',195,15,{align:'right'});
-  doc.setFont(undefined,'normal'); if(emp?.ruc) doc.text(`R.U.C. ${emp.ruc}`,195,19,{align:'right'}); if(emp?.direccion) doc.text(emp.direccion,195,23,{align:'right'}); if(emp?.telefono) doc.text(`Telf.: ${emp.telefono}`,195,27,{align:'right'});
-  doc.setFontSize(12); doc.setFont(undefined,'bold'); doc.text(`PLANILLA POR GASTO DE MOVILIDAD - Nro. ${serie}-${num}`, doc.internal.pageSize.getWidth()/2,45,{align:'center'});
-  doc.setFontSize(10); doc.setFont(undefined,'normal'); doc.text(`Fecha de Emisión: ${fecha}`,15,60); doc.text(`Trabajador: ${u.nombres} ${u.apellidos}`,15,67); doc.text(`D.N.I.: ${u.dni}`,150,67);
-  let y=80; doc.setFont(undefined,'bold'); doc.text('#',15,y); doc.text('Destino',28,y); doc.text('Motivo',78,y); doc.text('Proyecto',128,y); doc.text('PC',165,y); doc.text('Monto (S/)',195,y,{align:'right'});
-  doc.line(15,y+2,195,y+2); y+=8; doc.setFont(undefined,'normal');
-  items.forEach((d,i)=>{ doc.text(String(i+1),15,y); doc.text(doc.splitTextToSize(d.destino,45),28,y); doc.text(doc.splitTextToSize(d.motivo,45),78,y); doc.text(doc.splitTextToSize(d.proyecto,30),128,y); doc.text(d.pc,165,y); doc.text(d.monto.toFixed(2),195,y,{align:'right'}); y+=10;});
-  doc.line(15,y,195,y); y+=7; doc.setFont(undefined,'bold'); doc.text('Total S/.',165,y); doc.text(Number(total).toFixed(2),195,y,{align:'right'});
-  doc.line(80,y+40,140,y+40); doc.text('Firma del Trabajador', doc.internal.pageSize.getWidth()/2,y+45,{align:'center'});
-  doc.setFontSize(7); doc.setTextColor(100);
-  const disclaimer="Base Legal: Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del artículo 21° del Reglamento de la ley del Impuesto a la Renta. La falta de consignación de la fecha, nombres y apellidos, DNI, motivo/destino y monto sólo inhabilita la planilla de ese desplazamiento.";
-  doc.text(doc.splitTextToSize(disclaimer,180),15, doc.internal.pageSize.getHeight()-20);
-  doc.save(`Planilla_${serie}-${num}.pdf`);
-}
-
-/* ======= Admin ======= */
-function pinOK(){ return ADMIN_OK && isAdmin(); }
-
-qs('#btn-admin-pin').addEventListener('click', async ()=>{
-  const pin = qs('#pin-in').value.trim();
-  const r = await api('/api/admin/pin',{method:'POST', body:JSON.stringify({pin})});
-  ADMIN_OK = !!r.ok;
-  qs('#pin-ok').textContent=ADMIN_OK?'Acceso concedido':'PIN incorrecto';
-  ['emp-add','emp-save','usr-add','usr-save','usr-del'].forEach(id=>qs('#'+id).disabled=!ADMIN_OK);
-  if(!ADMIN_OK){ HIST_EDIT=false; renderHistorial(); }
-});
-
-async function renderEmpresasTable(){
-  if(!isAdmin()){ qs('#emp-table').innerHTML=''; return; }
-  const list=CACHE.empresas;
-  let html=`<table class="tbl"><thead><tr>
-    <th class="w-m">ID</th><th class="w-l">Razón Social</th><th class="w-m">RUC</th><th class="w-l">Dirección</th><th class="w-m">Teléfono</th><th class="w-l">Logo</th><th class="w-m">Vista</th>
-  </tr></thead><tbody>`;
-  list.forEach((e,idx)=>{
-    html+=`<tr data-idx="${idx}">
-      <td><input value="${e.id}" data-f="id" class="w-m"></td>
-      <td><input value="${e.razon||''}" data-f="razon" class="uppercase w-l"></td>
-      <td><input value="${e.ruc||''}" data-f="ruc" class="w-m"></td>
-      <td><input value="${e.direccion||''}" data-f="direccion" class="uppercase w-l"></td>
-      <td><input value="${e.telefono||''}" data-f="telefono" class="w-m"></td>
-      <td><input type="file" accept="image/*" data-logo="${idx}" class="w-l" ${pinOK()?'':'disabled'}></td>
-      <td class="center">${e.logo?'<img src="'+e.logo+'" style="height:28px">':'—'}</td>
-    </tr>`;
-  });
-  html+='</tbody></table>'; qs('#emp-table').innerHTML=html;
-
-  qsa('input[type="file"][data-logo]').forEach(inp=>{
-    inp.addEventListener('change', ev=>{
-      if(!pinOK()) return;
-      const idx=Number(inp.dataset.logo);
-      const f=ev.target.files?.[0]; if(!f) return;
-      const rd=new FileReader(); rd.onload=()=>{ CACHE.empresas[idx].logo=rd.result; };
-      rd.readAsDataURL(f);
-    });
-  });
-}
-
-async function renderUsuariosTable(){
-  if(!isAdmin()){ qs('#usr-table').innerHTML=''; return; }
-  const list=CACHE.usuarios, emps=CACHE.empresas;
-  let html=`<table class="tbl"><thead><tr>
-    <th class="center w-s">Sel</th><th class="w-s">Activo</th><th class="w-m">DNI</th><th class="w-l">Nombres</th><th class="w-l">Apellidos</th><th class="w-l">Empresa</th><th class="w-m">Rol</th><th class="w-l">Proy. Defecto</th><th class="w-l">Proyectos (coma)</th><th class="w-l">Email</th>
-  </tr></thead><tbody>`;
-  list.forEach((u,idx)=>{
-    const proys=(u.proyectos||(u.proys||[])).join(', ');
-    html+=`<tr data-idx="${idx}">
-      <td class="center"><input type="checkbox" class="rowchk"></td>
-      <td class="center"><input type="checkbox" data-f="activo" ${u.activo?'checked':''}></td>
-      <td><input value="${u.dni}" data-f="dni" class="w-m"></td>
-      <td><input value="${u.nombres||''}" data-f="nombres" class="uppercase w-l"></td>
-      <td><input value="${u.apellidos||''}" data-f="apellidos" class="uppercase w-l"></td>
-      <td><select data-f="empresaid" class="w-l">${emps.map(e=>`<option value="${e.id}" ${e.id===(u.empresaid||u.empresaId)?'selected':''}>${e.razon}</option>`).join('')}</select></td>
-      <td><select data-f="rol" class="w-m"><option value="ADMIN_PADOVA" ${u.rol==='ADMIN_PADOVA'?'selected':''}>ADMIN_PADOVA</option><option value="USUARIO" ${u.rol==='USUARIO'?'selected':''}>USUARIO</option></select></td>
-      <td><input value="${u.proydef||u.proyDef||''}" data-f="proydef" class="uppercase w-l"></td>
-      <td><input value="${proys}" data-f="proyectos" class="uppercase w-l"></td>
-      <td><input value="${u.email||''}" data-f="email" class="w-l"></td>
-    </tr>`;
-  });
-  html+='</tbody></table>'; qs('#usr-table').innerHTML=html;
-}
-
-/* botones usuarios/empresas */
-qs('#emp-add').addEventListener('click', ()=>{
-  if(!pinOK()) return; CACHE.empresas.push({id:'NEW_ID',razon:'',ruc:'',direccion:'',telefono:'',logo:''}); renderEmpresasTable();
-});
-qs('#emp-save').addEventListener('click', async ()=>{
-  if(!pinOK()) return;
-  const rows=qsa('#emp-table tbody tr'); const list=[];
-  rows.forEach(tr=>{
-    const get=f=>tr.querySelector(`[data-f="${f}"]`).value.trim();
-    const idx=Number(tr.dataset.idx);
-    list.push({id:get('id'),razon:get('razon').toUpperCase(),ruc:get('ruc'),direccion:get('direccion').toUpperCase(),telefono:get('telefono'),logo:CACHE.empresas[idx].logo||''});
-  });
-  await api('/api/empresas',{method:'PUT', body:JSON.stringify(list)});
-  CACHE.empresas=list;
-  alert('Empresas guardadas.');
-  renderEmpresasTable();
-  if(CURRENT_USER) setHeaderEmpresa(getEmpresaById(CURRENT_USER.empresaid||CURRENT_USER.empresaId));
-});
-
-qs('#usr-add').addEventListener('click', ()=>{
-  if(!pinOK()) return; const first=CACHE.empresas[0]?.id||'INV_PADOVA';
-  CACHE.usuarios.push({activo:true,dni:'NEW_DNI',nombres:'',apellidos:'',empresaid:first,rol:'USUARIO',proyectos:[],proydef:'',email:''});
-  renderUsuariosTable(); renderTrabajadoresSelect();
-});
-qs('#usr-del').addEventListener('click', async ()=>{
-  if(!pinOK()) return;
-  const rows=qsa('#usr-table tbody tr');
-  const dnis=rows.filter(tr=>tr.querySelector('.rowchk')?.checked).map(tr=>tr.querySelector('[data-f="dni"]').value.trim());
-  if(!dnis.length){ alert('Selecciona al menos un usuario.'); return; }
-  if(!confirm('¿Eliminar los usuarios seleccionados?')) return;
-  await api('/api/usuarios',{method:'DELETE', body:JSON.stringify({dnis})});
-  CACHE.usuarios = await api('/api/usuarios');
-  renderUsuariosTable(); renderTrabajadoresSelect(); onTrabajadorChange();
-});
-qs('#usr-save').addEventListener('click', async ()=>{
-  if(!pinOK()) return;
-  const rows=qsa('#usr-table tbody tr'); const list=[];
-  rows.forEach(tr=>{
-    const get=f=>tr.querySelector(`[data-f="${f}"]`);
-    const proys=(get('proyectos').value||'').split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
-    list.push({
-      activo:get('activo').checked,
-      dni:get('dni').value.trim(),
-      nombres:get('nombres').value.trim().toUpperCase(),
-      apellidos:get('apellidos').value.trim().toUpperCase(),
-      empresaid:get('empresaid').value,
-      rol:get('rol').value,
-      proydef:get('proydef').value.trim().toUpperCase(),
-      proyectos:proys,
-      email:get('email').value.trim().toLowerCase()
-    });
-  });
-  await api('/api/usuarios',{method:'PUT', body:JSON.stringify(list)});
-  CACHE.usuarios=list;
-  alert('Usuarios guardados.');
-  renderUsuariosTable(); renderTrabajadoresSelect(); onTrabajadorChange();
-});
-
-/* ======= Modal ======= */
-function openTrabajadorEditor(edit){
-  if(!isAdmin()){ alert('Solo administradores.'); return; }
-  const mEmp=qs('#m-empresa'); mEmp.innerHTML='';
-  CACHE.empresas.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.razon;mEmp.appendChild(o);});
-  const selDni=qs('#sel-trabajador').value; const t=CACHE.usuarios.find(u=>u.dni===selDni);
-  qs('#m-title').textContent=edit?'Editar Trabajador':'Nuevo Trabajador';
-  if(edit&&t){ EDITING_DNI=t.dni; setV('m-nombres',t.nombres); setV('m-apellidos',t.apellidos); setV('m-dni',t.dni); setV('m-proydef',t.proydef||t.proyDef||''); setV('m-email',t.email||''); qs('#m-empresa').value=(t.empresaid||t.empresaId); qs('#m-rol').value=t.rol; setV('m-proys',((t.proyectos||t.proys||[])).join(', ')); }
-  else { EDITING_DNI=null; ['m-nombres','m-apellidos','m-dni','m-proydef','m-email','m-proys'].forEach(id=>setV(id,'')); qs('#m-empresa').value=CACHE.empresas[0]?.id||''; qs('#m-rol').value='USUARIO'; }
-  qs('#modal').style.display='flex';
-}
-function setV(id,v){ qs('#'+id).value=v; }
-function g(id){ return qs('#'+id).value||''; }
-qs('#btn-modal-cancel').addEventListener('click', ()=>qs('#modal').style.display='none');
-qs('#btn-modal-save').addEventListener('click', async ()=>{
-  const nombres=g('m-nombres').toUpperCase(), apellidos=g('m-apellidos').toUpperCase(), dni=g('m-dni'), empresaid=g('m-empresa'), rol=g('m-rol'), proydef=g('m-proydef').toUpperCase(), email=g('m-email').toLowerCase(), proys=g('m-proys').split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
-  if(!nombres||!apellidos||!/^\d{8}$/.test(dni)||!email){ alert('Complete Nombres, Apellidos, DNI (8 dígitos) y Email.'); return; }
-  if(EDITING_DNI){
-    await api('/api/usuarios/modal',{method:'PUT', body:JSON.stringify({edit:true,from:EDITING_DNI,record:{activo:true,dni,nombres,apellidos,empresaid,rol,proydef,proyectos:proys,email}})});
-  }else{
-    await api('/api/usuarios/modal',{method:'PUT', body:JSON.stringify({edit:false,record:{activo:true,dni,nombres,apellidos,empresaid,rol,proydef,proyectos:proys,email}})});
-  }
-  qs('#modal').style.display='none';
-  CACHE.usuarios = await api('/api/usuarios');
-  renderUsuariosTable(); renderTrabajadoresSelect(); onTrabajadorChange();
-});
-
-/* ======= Eventos ======= */
-qs('#btn-login').addEventListener('click', ()=> qs('#login-overlay').style.display='flex');
-qs('#btn-logout').addEventListener('click', ()=>location.reload());
-qs('#btn-local-login').addEventListener('click', localLogin);
-qs('#btn-new-worker').addEventListener('click', ()=>openTrabajadorEditor(false));
-qs('#btn-edit-worker').addEventListener('click', ()=>openTrabajadorEditor(true));
-qs('#sel-trabajador').addEventListener('change', onTrabajadorChange);
-qs('#f-emision').addEventListener('change', ()=>updateTotalsUI());
-document.addEventListener('input', e=>{ if(e.target.classList.contains('monto')) updateTotalsUI(true); });
-qs('#btn-save').addEventListener('click', guardarPlanilla);
-
-qsa('.tab').forEach(t=>t.addEventListener('click', async ()=>{
-  qsa('.view').forEach(v=>v.classList.remove('active'));
-  qsa('.tab').forEach(b=>b.classList.remove('active'));
-  const id = t.dataset.tab;
-  qs('#view-'+id).classList.add('active'); t.classList.add('active');
-  if(id==='hist') renderHistorial();
-  if(id==='admin'){ renderEmpresasTable(); renderUsuariosTable(); }
-}));
-
-qs('#btn-hist-edit').addEventListener('click', ()=>{
-  if(!isAdmin()){ alert('Solo administradores.'); return; }
-  if(!ADMIN_OK){ alert('Se requiere PIN de administrador.'); return; }
-  HIST_EDIT=!HIST_EDIT;
-  qs('#hist-save').style.display=HIST_EDIT?'inline-block':'none';
-  qs('#hist-del').style.display=HIST_EDIT?'inline-block':'none';
-  renderHistorial();
-});
-qs('#hist-save').addEventListener('click', async ()=>{
-  if(!pinOK()) return;
-  const rows=qsa('#hist table tbody tr');
-  const changes=[];
-  rows.forEach(tr=>{
-    const id=parseInt(tr.getAttribute('data-rid')||'0',10);
-    if(!id) return;
-    const inputs=tr.querySelectorAll('input, select');
-    changes.push({
-      id,
-      serie:inputs[1].value.trim().toUpperCase(),
-      num:inputs[2].value.trim(),
-      fecha:inputs[3].value.trim(),
-      trabajador:inputs[4].value.trim().toUpperCase(),
-      proyecto:inputs[5].value.trim().toUpperCase(),
-      destino:inputs[6].value.trim().toUpperCase(),
-      motivo:inputs[7].value.trim().toUpperCase(),
-      pc:inputs[8].value.trim(),
-      monto:parseFloat(inputs[9].value)||0,
-      total:parseFloat(inputs[10].value)||0
-    });
-  });
-  await api('/api/historial',{method:'PUT', body:JSON.stringify(changes)});
-  alert('Historial actualizado.');
-  HIST_EDIT=false; qs('#hist-save').style.display='none'; qs('#hist-del').style.display='none';
-  renderHistorial();
-});
-qs('#hist-del').addEventListener('click', async ()=>{
-  if(!pinOK()) return;
-  if(!confirm('¿Eliminar las filas seleccionadas del historial?')) return;
-  const ids=qsa('#hist table tbody tr').filter(tr=>tr.querySelector('.rowchk')?.checked).map(tr=>parseInt(tr.getAttribute('data-rid'),10));
-  if(!ids.length){ alert('No hay filas seleccionadas.'); return; }
-  await api('/api/historial',{method:'DELETE', body:JSON.stringify({ids})});
-  alert('Filas eliminadas.'); renderHistorial();
 });
 </script>
 </body>
