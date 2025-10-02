@@ -1,269 +1,260 @@
 // server.mjs
 import express from "express";
 import cors from "cors";
-import pkg from "pg";                 // pg es CommonJS; usa default import
-const { Pool } = pkg;
-
 import path from "path";
 import { fileURLToPath } from "url";
+import pkg from "pg";
+
+const { Pool } = pkg;
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+const __dirname = path.dirname(__filename);
 
-const {
-  DATABASE_URL,
-  CORS_ORIGIN = "*",
-  PORT = 10000,               // Render asigna PORT; respetamos si lo define
-  ADMIN_PIN = "1234",
-  TOPE = "45",
-  NODE_ENV = "production",
-} = process.env;
+const app = express();
 
+// --------- ENV ----------
+const PORT = process.env.PORT || 10000;
+const DATABASE_URL = process.env.DATABASE_URL;           // Neon / Render
+const CORS_ORIGIN = (process.env.CORS_ORIGIN || "").split(",").map(s=>s.trim()).filter(Boolean);
+const TOPE = Number(process.env.TOPE || 45);              // tope por día
+
+// --------- DB ----------
 if (!DATABASE_URL) {
   console.error("Falta DATABASE_URL en variables de entorno.");
   process.exit(1);
 }
 
-// Pool a Neon (con SSL)
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-const app = express();
-app.use(express.json({ limit: "3mb" }));
-app.use(cors({ origin: CORS_ORIGIN }));
-
-// ---------- Helper de consultas
-async function q(text, params = []) {
-  const c = await pool.connect();
-  try { return await c.query(text, params); }
-  finally { c.release(); }
+async function q(sql, params = []) {
+  const client = await pool.connect();
+  try {
+    const res = await client.query(sql, params);
+    return res.rows;
+  } finally {
+    client.release();
+  }
 }
 
-// ---------- Bootstrap mínimo (tablas + vista login)
-async function bootstrap() {
-  await q(`
-    CREATE TABLE IF NOT EXISTS empresas(
-      id        TEXT PRIMARY KEY,
-      razon     TEXT NOT NULL,
-      ruc       TEXT NOT NULL,
-      direccion TEXT DEFAULT '',
-      telefono  TEXT DEFAULT '',
-      logo      TEXT DEFAULT ''
-    );
-  `);
+// --------- MIDDLEWARE ----------
+app.use(express.json());
+app.use(
+  cors({
+    origin: CORS_ORIGIN.length ? CORS_ORIGIN : true,
+    credentials: true,
+  })
+);
 
-  await q(`
-    CREATE TABLE IF NOT EXISTS usuarios(
-      email     TEXT PRIMARY KEY,
-      dni       TEXT NOT NULL,
-      nombres   TEXT NOT NULL,
-      apellidos TEXT NOT NULL,
-      rol       TEXT NOT NULL,
-      activo    TEXT DEFAULT '1',
-      empresaid TEXT NOT NULL REFERENCES empresas(id),
-      proydef   TEXT DEFAULT '',
-      proys     TEXT[] DEFAULT '{}'::TEXT[]
-    );
-  `);
+// --------- ESTÁTICOS (ARREGLA "Cannot GET /") ----------
+const publicDir = path.join(__dirname, "public");
+app.use(express.static(publicDir));
+app.get("/", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
 
-  await q(`
-    CREATE TABLE IF NOT EXISTS pcs(
-      codigo    TEXT NOT NULL,
-      empresaid TEXT NOT NULL REFERENCES empresas(id),
-      PRIMARY KEY(codigo, empresaid)
-    );
-  `);
+// --------- HEALTH ----------
+app.get("/api/health", (_req, res) =>
+  res.json({ ok: true, env: process.env.NODE_ENV || "dev" })
+);
 
-  await q(`
-    CREATE TABLE IF NOT EXISTS planillas(
-      id          BIGSERIAL PRIMARY KEY,
-      email       TEXT NOT NULL,
-      dni         TEXT NOT NULL,
-      fecha       DATE NOT NULL,
-      empresaid   TEXT NOT NULL,
-      proyecto    TEXT DEFAULT '',
-      items       JSONB NOT NULL,
-      total       NUMERIC(12,2) NOT NULL DEFAULT 0,
-      serie       TEXT NOT NULL,
-      num         INTEGER NOT NULL,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(email, num)
-    );
-  `);
-
-  // Vista de login robusta (CAST antes de COALESCE)
-  await q(`
-    CREATE OR REPLACE VIEW v_usuarios_login AS
-    SELECT
-      email,
-      dni,
-      nombres,
-      apellidos,
-      rol,
-      CASE
-        WHEN COALESCE((activo)::TEXT,'') IN ('1','t','true','TRUE')
-        THEN TRUE ELSE FALSE
-      END AS activo,
-      empresaid,
-      proydef,
-      COALESCE(proys,'{}'::TEXT[]) AS proys
-    FROM usuarios;
-  `);
-}
-
-// ---------- Utilidades
-function serieFromNombre(nombres = "", apellidos = "") {
-  const n = String(nombres).trim().toUpperCase();
-  const a = String(apellidos).trim().toUpperCase();
-  const s1 = n ? n[0] : "X";
-  const s2 = a ? a[0] : "X";
-  return `${s1}${s2}`; // p.ej. YL
-}
-
-async function nextCorrelativo(email) {
-  const r = await q(`SELECT COALESCE(MAX(num),0)+1 AS n FROM planillas WHERE email=$1`, [email]);
-  return Number(r.rows?.[0]?.n || 1);
-}
-
-// ---------- API
-app.get("/api/health", (_req, res) => res.json({ ok:true, env: NODE_ENV }));
-
+// --------- LOGIN ----------
 app.get("/api/login", async (req, res) => {
   try {
     const email = String(req.query.email || "").trim().toLowerCase();
-    if (!email) return res.status(400).json({ error: "Falta email" });
-    const r = await q(`SELECT * FROM v_usuarios_login WHERE lower(email)=lower($1)`, [email]);
-    const u = r.rows?.[0];
-    if (!u)   return res.status(404).json({ error: "Usuario no encontrado" });
-    if (!u.activo) return res.status(403).json({ error: "Usuario inactivo" });
-    res.json(u);
+    if (!email) return res.status(400).json({ msg: "Falta email" });
+
+    // Usa la vista si existe; si no, cae al SELECT directo
+    let row;
+    try {
+      const r = await q(
+        `select email,dni,nombres,apellidos,rol,activo,empresaid,proydef,proys
+         from v_usuarios_login
+         where lower(email)=lower($1)
+         limit 1`,
+        [email]
+      );
+      row = r[0];
+    } catch {
+      const r = await q(
+        `select 
+           email,dni,nombres,apellidos,rol,
+           case when coalesce(activo::text,'') in ('1','t','true','TRUE') then true else false end as activo,
+           empresaid, proydef, coalesce(proys, array[]::text[]) as proys
+         from usuarios
+         where lower(email)=lower($1)
+         limit 1`,
+        [email]
+      );
+      row = r[0];
+    }
+
+    if (!row) return res.status(404).json({ msg: "Usuario no encontrado" });
+    if (!row.activo) return res.status(403).json({ msg: "Usuario inactivo" });
+
+    res.json(row);
   } catch (e) {
-    console.error("login error:", e);
-    res.status(500).json({ error: "Error en login" });
+    console.error(e);
+    res.status(500).json({ msg: "Error login" });
   }
 });
 
+// --------- EMPRESAS ----------
 app.get("/api/empresas", async (req, res) => {
   try {
-    const simple = String(req.query.simple || "0") === "1";
-    const r = await q(`SELECT * FROM empresas ORDER BY id`);
-    if (simple) return res.json(r.rows.map(({id,razon,ruc}) => ({id,razon,ruc})));
-    res.json(r.rows);
+    const simple = String(req.query.simple || "") === "1";
+    if (simple) {
+      const rows = await q(
+        `select id, razon, ruc
+           from empresas
+           order by razon`
+      );
+      return res.json(rows);
+    }
+    const rows = await q(
+      `select id, razon, ruc, direccion, telefono, logo
+         from empresas
+         order by razon`
+    );
+    res.json(rows);
   } catch (e) {
-    console.error("empresas error:", e);
-    res.status(500).json({ error: "Error listando empresas" });
+    console.error(e);
+    res.status(500).json({ msg: "Error empresas" });
   }
 });
 
+// --------- USUARIOS (para selector) ----------
 app.get("/api/usuarios", async (_req, res) => {
   try {
-    const r = await q(`
-      SELECT email,dni,nombres,apellidos,rol,empresaid,proydef,proys,
-             CASE WHEN COALESCE((activo)::TEXT,'') IN ('1','t','true','TRUE')
-                  THEN TRUE ELSE FALSE END AS activo
-      FROM usuarios
-      ORDER BY apellidos, nombres
-    `);
-    res.json(r.rows);
+    // muestra sólo campos necesarios
+    const rows = await q(
+      `select email, dni, nombres, apellidos, 
+              case when coalesce(activo::text,'') in ('1','t','true','TRUE') 
+                   then true else false end as activo,
+              rol, empresaid, proydef, coalesce(proys, array[]::text[]) as proys
+         from usuarios
+         order by apellidos, nombres`
+    );
+    res.json(rows);
   } catch (e) {
-    console.error("usuarios error:", e);
-    res.status(500).json({ error: "Error listando usuarios" });
+    console.error(e);
+    res.status(500).json({ msg: "Error usuarios" });
   }
 });
 
-app.get("/api/pcs", async (req, res) => {
-  try {
-    const empresaid = String(req.query.empresaid || "");
-    const r = await q(`SELECT codigo FROM pcs WHERE empresaid=$1 ORDER BY codigo`, [empresaid]);
-    res.json(r.rows.map(x => x.codigo));
-  } catch (e) {
-    console.error("pcs error:", e);
-    res.status(500).json({ error: "Error listando PCs" });
-  }
-});
-
+// --------- PLANILLAS: guardar ----------
 app.post("/api/planillas", async (req, res) => {
+  const { dni, email, fecha, items = [] } = req.body || {};
+  if (!dni || !email) return res.status(400).json({ msg: "Faltan dni/email" });
+
+  const total = (items || []).reduce((s, it) => s + Number(it?.monto || 0), 0);
+
+  // tope por día/usuario
+  if (total > TOPE + 1e-6) {
+    return res
+      .status(400)
+      .json({ msg: `Has superado el tope de S/ ${TOPE.toFixed(2)}` });
+  }
+
   try {
-    const { email, dni, fecha, items = [], empresaid, proyecto = "" } = req.body || {};
-    if (!email || !dni || !fecha || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "Datos incompletos" });
+    // datos del usuario
+    const [u] = await q(
+      `select email, dni, nombres, apellidos, empresaid 
+         from usuarios
+        where lower(email)=lower($1)`,
+      [email]
+    );
+    if (!u) return res.status(404).json({ msg: "Usuario no encontrado" });
+
+    // empresa
+    const [emp] = await q(
+      `select id, razon, ruc, direccion from empresas where id=$1`,
+      [u.empresaid]
+    );
+
+    // serie: iniciales
+    const inicial = (u.nombres || "X").trim()[0] || "X";
+    const inicial2 = (u.apellidos || "X").trim()[0] || "X";
+    const serie = (inicial + inicial2).toUpperCase();
+
+    // num correlativo por usuario
+    const [{ next }] = await q(
+      `select coalesce(max(num),0)+1 as next
+         from planillas
+        where lower(email)=lower($1)`,
+      [email]
+    );
+    const num = String(next).padStart(5, "0");
+
+    // guarda encabezado
+    const [{ id: pid }] = await q(
+      `insert into planillas (serie,num,fecha,dni,email,total,empresaid)
+       values ($1,$2,$3,$4,$5,$6,$7)
+       returning id`,
+      [serie, num, fecha || new Date().toISOString().slice(0, 10), dni, email, total, u.empresaid]
+    );
+
+    // guarda detalles
+    for (const it of items) {
+      await q(
+        `insert into planillas_det (planilla_id,destino,motivo,proyecto,pc,monto)
+         values ($1,$2,$3,$4,$5,$6)`,
+        [
+          pid,
+          (it.destino || "").toUpperCase(),
+          (it.motivo || "").toUpperCase(),
+          (it.proyecto || "").toUpperCase(),
+          it.pc || "",
+          Number(it.monto || 0),
+        ]
+      );
     }
-
-    const total = items.reduce((a,it)=> a + Number(it.monto || 0), 0);
-    const tope  = Number(TOPE || 45);
-    if (total > tope) {
-      return res.status(400).json({ error: `Supera el tope diario de S/ ${tope.toFixed(2)}` });
-    }
-
-    const ru = await q(`SELECT nombres,apellidos,empresaid FROM usuarios WHERE lower(email)=lower($1)`, [email]);
-    const u  = ru.rows?.[0];
-    if (!u) return res.status(404).json({ error: "Usuario no existe" });
-
-    const serie = serieFromNombre(u.nombres, u.apellidos);
-    const num   = await nextCorrelativo(email);
-
-    await q(`
-      INSERT INTO planillas(email,dni,fecha,empresaid,proyecto,items,total,serie,num)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-    `, [email, dni, fecha, empresaid || u.empresaid, proyecto, JSON.stringify(items), total, serie, num]);
 
     res.json({
       ok: true,
       serie,
-      num: String(num).padStart(5, "0"),
-      total: Number(total).toFixed(2),
+      num,
+      total,
       fecha,
-      empresa: { id: empresaid || u.empresaid },
+      empresa: emp || null,
     });
   } catch (e) {
-    console.error("guardar planilla error:", e);
-    res.status(500).json({ error: "No se pudo guardar la planilla" });
+    console.error(e);
+    res.status(500).json({ msg: "Error al guardar planilla" });
   }
 });
 
-app.get("/api/historial", async (req, res) => {
+// --------- PLANILLAS: historial ----------
+app.get("/api/planillas", async (req, res) => {
   try {
-    const email = String(req.query.email || "").toLowerCase();
-    if (!email) return res.status(400).json({ error: "Falta email" });
-    const r = await q(`
-      SELECT id,fecha,empresaid,proyecto,total,serie,num,items,created_at
-      FROM planillas
-      WHERE lower(email)=lower($1)
-      ORDER BY created_at DESC
-    `, [email]);
-    res.json(r.rows);
+    const email = String(req.query.email || "").trim().toLowerCase();
+    const rol = String(req.query.rol || "").trim();
+
+    let rows;
+    if (rol === "ADMIN_PADOVA") {
+      rows = await q(
+        `select p.id, p.serie, p.num, p.fecha, p.email, p.total
+           from planillas p
+          order by p.fecha desc, p.id desc
+          limit 500`
+      );
+    } else {
+      rows = await q(
+        `select p.id, p.serie, p.num, p.fecha, p.email, p.total
+           from planillas p
+          where lower(p.email)=lower($1)
+          order by p.fecha desc, p.id desc
+          limit 200`,
+        [email]
+      );
+    }
+    res.json(rows);
   } catch (e) {
-    console.error("historial error:", e);
-    res.status(500).json({ error: "Error listando historial" });
+    console.error(e);
+    res.status(500).json({ msg: "Error historial" });
   }
 });
 
-app.post("/api/admin/pin", (req, res) => {
-  const { pin } = req.body || {};
-  if (String(pin) === String(ADMIN_PIN)) return res.json({ ok: true });
-  return res.status(401).json({ error: "PIN inválido" });
+// --------- START ----------
+app.listen(PORT, () => {
+  console.log(`Servidor listo en :${PORT}`);
 });
-
-// Servir estáticos desde /public
-app.use(express.static(path.join(__dirname, "public")));
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-
-// Fallback SPA: cualquier ruta que no empiece con /api
-app.get(/^\/(?!api).*/, (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "index.html"))
-);
-
-
-// ---------- Arranque
-const server = app.listen(PORT, async () => {
-  try {
-    await bootstrap();
-    console.log(`API lista en puerto ${PORT}`);
-  } catch (e) {
-    console.error("Bootstrap error", e);
-    process.exit(1);
-  }
-});
-
-process.on("SIGTERM", () => server.close(() => process.exit(0)));
