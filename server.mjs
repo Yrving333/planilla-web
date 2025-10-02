@@ -245,11 +245,15 @@ app.post("/api/admin/pin", (req, res) => {
   return res.status(401).json({ error: "PIN inválido" });
 });
 
-// ---------- Servir frontend (evita "Cannot GET /")
+// Servir estáticos desde /public
 app.use(express.static(path.join(__dirname, "public")));
-app.get("/", (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+
+// Fallback SPA: cualquier ruta que no empiece con /api
+app.get(/^\/(?!api).*/, (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "index.html"))
+);
+
 
 // ---------- Arranque
 const server = app.listen(PORT, async () => {
