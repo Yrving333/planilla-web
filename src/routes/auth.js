@@ -52,7 +52,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(usuario, process.env.JWT_SECRET, { expiresIn: '12h' });
     res.json({ token, usuario });
   } catch (e) {
-    console.error('POST /login', e);
+    if (DEBUG) console.error('POST /login', e);
     const payload = { error: 'Error en login' };
     if (DEBUG) payload.detail = e?.message || String(e);
     res.status(500).json(payload);
