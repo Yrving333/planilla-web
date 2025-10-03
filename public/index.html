@@ -231,7 +231,7 @@
     </div>
   </div>
 
-  <!-- LOGIN OVERLAY (Modo local) -->
+  <!-- LOGIN OVERLAY -->
   <div id="login-overlay" class="login-overlay" style="display:none">
     <div class="login-card">
       <h3>Iniciar sesión</h3>
@@ -241,7 +241,7 @@
         <div class="hint">Modo DEMO: se valida contra la tabla <b>Usuarios</b>. La clave no se valida.</div>
         <div class="login-actions">
           <button class="btn danger" onclick="resetDemo()">Restablecer demo</button>
-          <button class="btn primary" onclick="localLogin()">Entrar</button>
+          <button class="btn primary">Entrar</button>
         </div>
       </div>
       <div id="login-msal" style="display:none">
@@ -254,8 +254,8 @@
 
 <script>
 /* ===================== CONFIG ===================== */
-const MODE = 'api'; // 'local' | 'api' | 'sharepoint'
-const API_BASE = ''; // URL base de la API (si usas 'api')
+const MODE = 'api';           // 'local' | 'api' | 'sharepoint'
+const API_BASE = '';          // URL base de la API ('' = misma origin)
 const TOPE = 45.00;
 const PC_CODES = ['94303','95301','95303','234120502','234120503'];
 const ADMIN_PIN_DEFAULT = '1234';
@@ -269,8 +269,13 @@ window.jsPDF = window.jspdf.jsPDF;
 const LS={empresas:'mv_empresas',usuarios:'mv_trabajadores',counters:'mv_countersByDNI',historial:'mv_historial',histId:'mv_histId',adminPin:'mv_adminPin'};
 function loadJSON(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):(d??null);}catch(_){return d??null}}
 function saveJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
+function ensureBaseStores(){
+  if(!loadJSON(LS.counters)) saveJSON(LS.counters,{});
+  if(!loadJSON(LS.historial)) saveJSON(LS.historial,[]);
+  if(!localStorage.getItem(LS.histId)) localStorage.setItem(LS.histId,'0');
+}
 
-/* Si usas DEMO local, popular tablas. (Pero el PIN se siembra SIEMPRE abajo) */
+/* DEMO local (sólo cuando MODE==='local') */
 function seedIfNeeded(){
   const direccion='JR. LAS PONCIANAS 139 OF.201 - LA MOLINA VIEJA', tel='495-1331';
   const emps = loadJSON(LS.empresas, null);
@@ -284,9 +289,7 @@ function seedIfNeeded(){
       {activo:true,dni:'44081950',nombres:'JOEL',apellidos:'GARGATE',email:'usuario@empresa.com',empresaId:'CONS_PADOVA',rol:'USUARIO',proyectos:['SANTA BEATRIZ'],proyDef:'SANTA BEATRIZ'}
     ]);
   }
-  if(!loadJSON(LS.counters)) saveJSON(LS.counters,{});
-  if(!loadJSON(LS.historial)) saveJSON(LS.historial,[]);
-  if(!localStorage.getItem(LS.histId)) localStorage.setItem(LS.histId,'0');
+  ensureBaseStores();
 }
 
 /* Sembrar SIEMPRE el PIN admin (no toca otros datos) */
@@ -309,23 +312,43 @@ const serieFromName=(n,a)=>(n.slice(0,2)+a.slice(0,2)).toUpperCase()+'001';
 
 /* ======= Inicio ======= */
 document.addEventListener('DOMContentLoaded', ()=>{
-  /* El PIN se siembra SIEMPRE; los datos demo solo si MODE==='local' */
   seedAdminPinIfNeeded();
-  if(MODE==='local'){ seedIfNeeded(); }
+  if(MODE==='local'){ seedIfNeeded(); } else { ensureBaseStores(); }
   showLoginOverlay(true);
 });
 
 /* ======= Login ======= */
 function showLoginOverlay(show){
   document.getElementById('login-overlay').style.display=show?'flex':'none';
-  document.getElementById('login-local').style.display=(MODE==='local')?'block':'none';
-  document.getElementById('login-msal').style.display =(MODE==='sharepoint')?'block':'none';
-  document.getElementById('btn-login').style.display=show?'none':'inline-block';
-  document.getElementById('btn-logout').style.display=show?'none':'inline-block';
+
+  const isLocal = (MODE==='local');
+  const isApi   = (MODE==='api');
+  const isSP    = (MODE==='sharepoint');
+
+  const boxLocal = document.getElementById('login-local');
+  const boxMsal  = document.getElementById('login-msal');
+  const hint     = document.querySelector('#login-local .hint');
+  const btnReset = document.querySelector('#login-local .btn.danger');
+  const btnEnter = document.querySelector('#login-local .btn.primary');
+
+  boxLocal.style.display = (isLocal || isApi) ? 'block' : 'none';
+  boxMsal.style.display  = isSP ? 'block' : 'none';
+
+  if(isLocal){
+    hint.innerHTML = 'Modo DEMO: se valida contra la tabla <b>Usuarios</b>. La clave no se valida.';
+    btnReset.style.display = 'inline-block';
+    btnEnter.onclick = localLogin;
+  }else if(isApi){
+    hint.innerHTML = 'Modo API: ingresa tu email y presiona <b>Entrar</b> para validar contra el backend.';
+    btnReset.style.display = 'none';
+    btnEnter.onclick = apiLogin;
+  }
+
+  document.getElementById('btn-login').style.display = show ? 'none' : 'inline-block';
+  document.getElementById('btn-logout').style.display = show ? 'none' : 'inline-block';
 }
 function login(){ showLoginOverlay(true); }
 function logout(){
-  // Salida limpia: se apagan privilegios y edición
   ADMIN_OK=false; HIST_EDIT=false;
   SESSION={email:null,display:null,dni:null,rol:null};
   document.getElementById('who').textContent='No autenticado';
@@ -340,11 +363,47 @@ function localLogin(){
   const email=(document.getElementById('local-email').value||'').trim().toLowerCase();
   const users=loadJSON(LS.usuarios,[]); const u=users.find(x=>x.email?.toLowerCase()===email);
   if(!u){ alert('Usuario no encontrado en la tabla Usuarios.'); return; }
-  // Reinicia privilegios y edición al iniciar sesión
   ADMIN_OK=false; HIST_EDIT=false; document.getElementById('pin-ok').textContent='';
   SESSION={email,display:`${u.nombres} ${u.apellidos}`,dni:u.dni,rol:u.rol};
   document.getElementById('who').textContent=`Conectado: ${SESSION.display} — ${SESSION.email} — Rol: ${SESSION.rol}`;
   applySessionUI(); initMainUI(); showLoginOverlay(false);
+}
+async function apiLogin(){
+  const email=(document.getElementById('local-email').value||'').trim().toLowerCase();
+  if(!email){ alert('Ingresa tu email.'); return; }
+  try{
+    const res=await fetch(`${API_BASE||''}/api/login`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email})
+    });
+    if(!res.ok){
+      const t=await res.text();
+      throw new Error(`HTTP ${res.status}: ${t}`);
+    }
+    const data=await res.json();
+    const u=data.usuario||{};
+    const emp=u.empresa||{};
+    // token para futuras llamadas si hicieras API CRUD
+    localStorage.setItem('mv_apiToken', data.token||'');
+
+    // Construimos almacenes mínimos para reutilizar el resto del UI
+    const empObj={id:emp.id||'EMP', razon:emp.razon||'', ruc:emp.ruc||'', direccion:emp.direccion||'', telefono:emp.telefono||'', logo:''};
+    saveJSON(LS.empresas,[empObj]);
+
+    const usrObj={activo:true, dni:u.dni||'', nombres:u.nombres||'', apellidos:u.apellidos||'',
+      email:(u.email||'').toLowerCase(), empresaId:empObj.id, rol:u.rol||'USUARIO',
+      proyectos:u.proyectos||[], proyDef:u.proy_def||u.proyDef||''};
+    saveJSON(LS.usuarios,[usrObj]);
+    ensureBaseStores();
+
+    SESSION={email:usrObj.email,display:`${usrObj.nombres} ${usrObj.apellidos}`,dni:usrObj.dni,rol:usrObj.rol};
+    document.getElementById('who').textContent=`Conectado: ${SESSION.display} — ${SESSION.email} — Rol: ${SESSION.rol}`;
+    applySessionUI(); initMainUI(); showLoginOverlay(false);
+  }catch(err){
+    console.error(err);
+    alert('No se pudo iniciar sesión contra la API. Revisa la consola.');
+  }
 }
 
 /* ======= Navegación de vistas ======= */
@@ -360,13 +419,11 @@ function show(id){
 /* ======= UI y datos ======= */
 function isAdmin(){ return SESSION.rol==='ADMIN_PADOVA'; }
 function applySessionUI(){
-  // Asegura que la barra y botones admin reflejen el rol actual
   const isA=isAdmin();
   document.getElementById('tab-admin').style.display=isA?'inline-block':'none';
   document.getElementById('btn-new-worker').style.display=isA?'inline-block':'none';
   document.getElementById('btn-edit-worker').style.display=isA?'inline-block':'none';
   document.getElementById('hist-admin-actions').style.display=isA?'flex':'none';
-  // Si el usuario actual no es admin, forzamos salida de edición
   if(!isA){ HIST_EDIT=false; }
   document.getElementById('hist-save').style.display=(isA && HIST_EDIT)?'inline-block':'none';
   document.getElementById('hist-del').style.display=(isA && HIST_EDIT)?'inline-block':'none';
@@ -465,7 +522,6 @@ function updateTotalsUI(alerta=false){
 
 /* ======= Historial ======= */
 function renderHistorial(){
-  // Si no es admin o no hay PIN valido, jamás se renderiza en modo edición
   if(!isAdmin() || !ADMIN_OK){ HIST_EDIT=false; }
   const adminBar=document.getElementById('hist-admin-actions');
   adminBar.style.display=isAdmin()?'flex':'none';
@@ -719,7 +775,7 @@ function resetDemo(){
   localStorage.removeItem(LS.counters);
   localStorage.removeItem(LS.historial);
   localStorage.removeItem(LS.histId);
-  seedIfNeeded(); // repuebla demo
+  seedIfNeeded();
   alert('Datos DEMO restablecidos.');
   renderEmpresasTable(); renderUsuariosTable(); renderTrabajadoresSelect(); onTrabajadorChange(); renderHistorial();
 }
