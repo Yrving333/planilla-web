@@ -6,28 +6,21 @@ import { normalize, serieFromName } from '../utils.js';
 const TOPE = Number(process.env.TOPE || 45);
 const router = Router();
 
-/**
- * Empresas:
- * - Si ?simple=1 -> público (para que el front pinte encabezado antes de login)
- * - Sin ?simple -> requiere token
- */
+/** Empresas: ?simple=1 devuelve campos mínimos (sin token) */
 router.get('/empresas', async (req, res) => {
   try {
     const simple = String(req.query.simple || '') === '1';
     const cols = simple ? 'id, razon, ruc' : 'id, razon, ruc, direccion, telefono, logo';
     const { rows } = await query(`SELECT ${cols} FROM empresas ORDER BY razon`);
-    if (!simple) {
-      // forzar auth si NO es simple
-      return requireAuth(req, res, () => res.json(rows));
-    }
-    return res.json(rows);
+    if (!simple) return requireAuth(req, res, () => res.json(rows));
+    res.json(rows);
   } catch (e) {
     console.error('GET /empresas', e);
     res.status(500).json({ error: 'Error listando empresas' });
   }
 });
 
-/** Usuarios (admin ve todos; usuario sólo el suyo) */
+/** Usuarios (admin ve todos; usuario solo el suyo) */
 router.get('/usuarios', requireAuth, async (req, res) => {
   try {
     const isAdmin = req.user.rol === 'ADMIN_PADOVA';
@@ -62,7 +55,7 @@ router.get('/acumulado', requireAuth, async (req, res) => {
   }
 });
 
-/** Crear planilla + detalle (server valida tope y genera correlativo) */
+/** Crear planilla + detalle */
 router.post('/planillas', requireAuth, async (req, res) => {
   const client = await getClient();
   try {
@@ -73,14 +66,12 @@ router.post('/planillas', requireAuth, async (req, res) => {
     const u = req.user;
     const serie = serieFromName(normalize(u.nombres), normalize(u.apellidos));
 
-    // siguiente correlativo por dni
     const { rows: rn } = await client.query(
       `SELECT COALESCE(MAX(num),0)+1 AS next FROM planilla WHERE dni=$1`, [u.dni]
     );
     const num = Number(rn[0].next || 1);
     const total = detalles.reduce((s, d) => s + Number(d.monto || 0), 0);
 
-    // tope por día
     const { rows: ra } = await client.query(
       `SELECT COALESCE(SUM(total),0) AS acumulado FROM planilla WHERE dni=$1 AND fecha=$2`,
       [u.dni, fecha]
@@ -91,7 +82,6 @@ router.post('/planillas', requireAuth, async (req, res) => {
     await client.query('BEGIN');
 
     const trabajador = `${u.nombres} ${u.apellidos}`;
-
     const { rows: rCab } = await client.query(
       `INSERT INTO planilla (serie,num,fecha,usuario_id,dni,trabajador,email,total)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -104,7 +94,7 @@ router.post('/planillas', requireAuth, async (req, res) => {
                   VALUES ($1,$2,$3,$4,$5,$6)`;
     for (const d of detalles) {
       await client.query(text, [
-        (planillaId),
+        planillaId,
         (d.proyecto || u.proy_def || '').toString().toUpperCase(),
         (d.destino  || '').toString().toUpperCase(),
         (d.motivo   || '').toString().toUpperCase(),
@@ -124,7 +114,7 @@ router.post('/planillas', requireAuth, async (req, res) => {
   }
 });
 
-/** Historial (admin: todos; usuario: solo sus planillas) */
+/** Historial (admin: todos; usuario: sólo los suyos) */
 router.get('/planillas', requireAuth, async (req, res) => {
   try {
     const isAdmin = req.user.rol === 'ADMIN_PADOVA';
@@ -136,7 +126,6 @@ router.get('/planillas', requireAuth, async (req, res) => {
          JOIN planilla_detalle d ON d.planilla_id = p.id`;
     if (!isAdmin) { sql += ` WHERE LOWER(p.email) = $1`; params.push(req.user.email.toLowerCase()); }
     sql += ` ORDER BY p.fecha DESC, p.serie, p.num DESC, d.id ASC`;
-
     const { rows } = await query(sql, params);
     res.json(rows);
   } catch (e) {
