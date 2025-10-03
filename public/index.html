@@ -5,8 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Planilla de Movilidad — S/45 (Login + Roles)</title>
 
+<!-- Libs -->
 <script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<!-- (opcional) ayuda contra caché agresiva -->
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -235,15 +241,28 @@
   <div id="login-overlay" class="login-overlay" style="display:none">
     <div class="login-card">
       <h3>Iniciar sesión</h3>
-      <div id="login-local">
+
+      <!-- Modo API -->
+      <div id="login-api" style="display:none">
+        <div class="group"><label>Email</label><input id="api-email" type="email" placeholder="admin@empresa.com"></div>
+        <div class="hint">Escribe tu correo y pulsa Entrar.</div>
+        <div class="login-actions">
+          <button class="btn primary" onclick="apiLogin()">Entrar</button>
+        </div>
+      </div>
+
+      <!-- Modo local -->
+      <div id="login-local" style="display:none">
         <div class="group"><label>Email</label><input id="local-email" type="email" placeholder="admin@empresa.com"></div>
         <div class="group" style="margin-top:8px"><label>Clave</label><input id="local-pass" type="password" placeholder="******"></div>
         <div class="hint">Modo DEMO: se valida contra la tabla <b>Usuarios</b>. La clave no se valida.</div>
         <div class="login-actions">
           <button class="btn danger" onclick="resetDemo()">Restablecer demo</button>
-          <button class="btn primary">Entrar</button>
+          <button class="btn primary" onclick="localLogin()">Entrar</button>
         </div>
       </div>
+
+      <!-- Modo MSAL/SharePoint -->
       <div id="login-msal" style="display:none">
         <div class="hint">Autentícate con tu cuenta de Microsoft 365.</div>
         <div class="login-actions"><button class="btn primary" onclick="msalLogin()">Entrar con Microsoft</button></div>
@@ -254,8 +273,8 @@
 
 <script>
 /* ===================== CONFIG ===================== */
-const MODE = 'api';           // 'local' | 'api' | 'sharepoint'
-const API_BASE = '';          // URL base de la API ('' = misma origin)
+const MODE = 'api';                 // 'api' | 'local' | 'sharepoint'
+const API_BASE = '';                // vacío = mismo origen (Render)
 const TOPE = 45.00;
 const PC_CODES = ['94303','95301','95303','234120502','234120503'];
 const ADMIN_PIN_DEFAULT = '1234';
@@ -263,21 +282,14 @@ const ADMIN_PIN_DEFAULT = '1234';
 const SP = { siteUrl:'https://tu-tenant.sharepoint.com/sites/Padova', lists:{empresas:'Empresas',usuarios:'Usuarios',historial:'Historial',counters:'Counters'}, scopes:['https://tu-tenant.sharepoint.com/.default'] };
 const MSAL_CONFIG = { auth:{ clientId:'', authority:'https://login.microsoftonline.com/<tenantId>' }, cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:true } };
 
-// Evitar error si jsPDF aún no está cargado
-try{ if(window.jspdf && window.jspdf.jsPDF){ window.jsPDF = window.jspdf.jsPDF; } }catch(_){}
+window.jsPDF = window.jspdf.jsPDF;
 
 /* ======= Persistencia ======= */
-const LS={empresas:'mv_empresas',usuarios:'mv_trabajadores',counters:'mv_countersByDNI',historial:'mv_historial',histId:'mv_histId',adminPin:'mv_adminPin'};
+const LS={empresas:'mv_empresas',usuarios:'mv_trabajadores',counters:'mv_countersByDNI',historial:'mv_historial',histId:'mv_histId',adminPin:'mv_adminPin',apiToken:'mv_apiToken'};
 function loadJSON(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):(d??null);}catch(_){return d??null}}
 function saveJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}
-function ensureBaseStores(){
-  if(!loadJSON(LS.counters)) saveJSON(LS.counters,{});
-  if(!loadJSON(LS.historial)) saveJSON(LS.historial,[]);
-  if(!localStorage.getItem(LS.histId)) localStorage.setItem(LS.histId,'0');
-}
-
-/* DEMO local (sólo cuando MODE==='local') */
 function seedIfNeeded(){
+  if(!localStorage.getItem(LS.adminPin)) localStorage.setItem(LS.adminPin, ADMIN_PIN_DEFAULT);
   const direccion='JR. LAS PONCIANAS 139 OF.201 - LA MOLINA VIEJA', tel='495-1331';
   const emps = loadJSON(LS.empresas, null);
   if(!Array.isArray(emps) || emps.length===0){
@@ -290,16 +302,9 @@ function seedIfNeeded(){
       {activo:true,dni:'44081950',nombres:'JOEL',apellidos:'GARGATE',email:'usuario@empresa.com',empresaId:'CONS_PADOVA',rol:'USUARIO',proyectos:['SANTA BEATRIZ'],proyDef:'SANTA BEATRIZ'}
     ]);
   }
-  ensureBaseStores();
-}
-
-/* Sembrar SIEMPRE el PIN admin (no toca otros datos) */
-function seedAdminPinIfNeeded(){
-  try{
-    if(!localStorage.getItem(LS.adminPin)){
-      localStorage.setItem(LS.adminPin, ADMIN_PIN_DEFAULT);
-    }
-  }catch(_){}
+  if(!loadJSON(LS.counters)) saveJSON(LS.counters,{});
+  if(!loadJSON(LS.historial)) saveJSON(LS.historial,[]);
+  if(!localStorage.getItem(LS.histId)) localStorage.setItem(LS.histId,'0');
 }
 
 /* ======= Estado ======= */
@@ -313,40 +318,22 @@ const serieFromName=(n,a)=>(n.slice(0,2)+a.slice(0,2)).toUpperCase()+'001';
 
 /* ======= Inicio ======= */
 document.addEventListener('DOMContentLoaded', ()=>{
-  seedAdminPinIfNeeded();
-  if(MODE==='local'){ seedIfNeeded(); } else { ensureBaseStores(); }
+  // asegura PIN por defecto
+  if(!localStorage.getItem(LS.adminPin)) localStorage.setItem(LS.adminPin, ADMIN_PIN_DEFAULT);
+  if(MODE==='local'){ seedIfNeeded(); }
   showLoginOverlay(true);
 });
 
 /* ======= Login ======= */
 function showLoginOverlay(show){
-  document.getElementById('login-overlay').style.display=show?'flex':'none';
-
-  const isLocal = (MODE==='local');
-  const isApi   = (MODE==='api');
-  const isSP    = (MODE==='sharepoint');
-
-  const boxLocal = document.getElementById('login-local');
-  const boxMsal  = document.getElementById('login-msal');
-  const hint     = document.querySelector('#login-local .hint');
-  const btnReset = document.querySelector('#login-local .btn.danger');
-  const btnEnter = document.querySelector('#login-local .btn.primary');
-
-  boxLocal.style.display = (isLocal || isApi) ? 'block' : 'none';
-  boxMsal.style.display  = isSP ? 'block' : 'none';
-
-  if(isLocal){
-    hint.innerHTML = 'Modo DEMO: se valida contra la tabla <b>Usuarios</b>. La clave no se valida.';
-    btnReset.style.display = 'inline-block';
-    btnEnter.onclick = localLogin;
-  }else if(isApi){
-    hint.innerHTML = 'Modo API: ingresa tu email y presiona <b>Entrar</b> para validar contra el backend.';
-    btnReset.style.display = 'none';
-    btnEnter.onclick = apiLogin;
-  }
-
-  document.getElementById('btn-login').style.display = show ? 'none' : 'inline-block';
-  document.getElementById('btn-logout').style.display = show ? 'none' : 'inline-block';
+  const ov=document.getElementById('login-overlay');
+  ov.style.display=show?'flex':'none';
+  // muestra sólo el bloque del modo actual
+  document.getElementById('login-api').style.display      = (MODE==='api')       ? 'block' : 'none';
+  document.getElementById('login-local').style.display    = (MODE==='local')     ? 'block' : 'none';
+  document.getElementById('login-msal').style.display     = (MODE==='sharepoint')? 'block' : 'none';
+  document.getElementById('btn-login').style.display = show?'none':'inline-block';
+  document.getElementById('btn-logout').style.display= show?'none':'inline-block';
 }
 function login(){ showLoginOverlay(true); }
 function logout(){
@@ -357,7 +344,6 @@ function logout(){
   document.getElementById('hist-save').style.display='none';
   document.getElementById('hist-del').style.display='none';
   document.getElementById('hist-admin-actions').style.display='none';
-  renderHistorial();
   showLoginOverlay(true);
 }
 function localLogin(){
@@ -369,41 +355,68 @@ function localLogin(){
   document.getElementById('who').textContent=`Conectado: ${SESSION.display} — ${SESSION.email} — Rol: ${SESSION.rol}`;
   applySessionUI(); initMainUI(); showLoginOverlay(false);
 }
+
+/* ======= Login API ======= */
 async function apiLogin(){
-  const email=(document.getElementById('local-email').value||'').trim().toLowerCase();
-  if(!email){ alert('Ingresa tu email.'); return; }
   try{
-    const res=await fetch(`${API_BASE||''}/api/login`,{
+    const email=(document.getElementById('api-email').value||'').trim().toLowerCase();
+    if(!email){ alert('Ingresa tu email'); return; }
+    const res=await fetch(`${API_BASE}/api/login`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email})
     });
     if(!res.ok){
-      const t=await res.text();
-      throw new Error(`HTTP ${res.status}: ${t}`);
+      const msg=await res.text().catch(()=>res.statusText);
+      throw new Error(`HTTP ${res.status}: ${msg}`);
     }
     const data=await res.json();
+    // data esperado: { token, usuario:{ id, dni, email, rol, nombres, apellidos, empresa_id, proy_def, proyectos[], empresa:{...}} }
     const u=data.usuario||{};
-    const emp=u.empresa||{};
-    // token para futuras llamadas si hicieras API CRUD
-    localStorage.setItem('mv_apiToken', data.token||'');
+    const empresa = u.empresa || null;
 
-    // Construimos almacenes mínimos para reutilizar el resto del UI
-    const empObj={id:emp.id||'EMP', razon:emp.razon||'', ruc:emp.ruc||'', direccion:emp.direccion||'', telefono:emp.telefono||'', logo:''};
-    saveJSON(LS.empresas,[empObj]);
+    // Guarda token (para futuras llamadas si las habilitas)
+    localStorage.setItem(LS.apiToken, data.token||'');
 
-    const usrObj={activo:true, dni:u.dni||'', nombres:u.nombres||'', apellidos:u.apellidos||'',
-      email:(u.email||'').toLowerCase(), empresaId:empObj.id, rol:u.rol||'USUARIO',
-      proyectos:u.proyectos||[], proyDef:u.proy_def||u.proyDef||''};
-    saveJSON(LS.usuarios,[usrObj]);
-    ensureBaseStores();
+    // Arma tablas locales mínimas para que la UI funcione
+    saveJSON(LS.usuarios,[{
+      activo:true,
+      dni: u.dni,
+      nombres: (u.nombres||'').toUpperCase(),
+      apellidos: (u.apellidos||'').toUpperCase(),
+      email: (u.email||'').toLowerCase(),
+      empresaId: empresa?.id || 'INV_PADOVA',
+      rol: u.rol || 'USUARIO',
+      proyectos: Array.isArray(u.proyectos)? u.proyectos.map(p=>String(p).toUpperCase()) : [],
+      proyDef: (u.proy_def || (u.proyectos?.[0]||'')).toUpperCase()
+    }]);
 
-    SESSION={email:usrObj.email,display:`${usrObj.nombres} ${usrObj.apellidos}`,dni:usrObj.dni,rol:usrObj.rol};
+    if(empresa){
+      saveJSON(LS.empresas,[{
+        id: empresa.id,
+        razon: empresa.razon || '',
+        ruc: empresa.ruc || '',
+        direccion: empresa.direccion || '',
+        telefono: empresa.telefono || '',
+        logo: empresa.logo || ''
+      }]);
+    }else{
+      // en caso no venga la empresa, asegura que exista algo
+      if(!loadJSON(LS.empresas)) saveJSON(LS.empresas,[]);
+    }
+
+    // Estado de sesión
+    SESSION={
+      email: (u.email||'').toLowerCase(),
+      display: `${u.nombres||''} ${u.apellidos||''}`.trim(),
+      dni: u.dni || null,
+      rol: u.rol || 'USUARIO'
+    };
     document.getElementById('who').textContent=`Conectado: ${SESSION.display} — ${SESSION.email} — Rol: ${SESSION.rol}`;
     applySessionUI(); initMainUI(); showLoginOverlay(false);
   }catch(err){
-    console.error(err);
-    alert('No se pudo iniciar sesión contra la API. Revisa la consola.');
+    console.error('apiLogin error', err);
+    alert('Error al iniciar sesión: '+err.message);
   }
 }
 
@@ -616,13 +629,13 @@ function deleteHistRows(){
 
 /* ======= Admin ======= */
 function loginAdmin(){
-  const pin=(document.getElementById('pin-in').value||'').trim();
-  const stored=localStorage.getItem(LS.adminPin)||'';
-  ADMIN_OK = (pin===stored);
+  ADMIN_OK=(localStorage.getItem(LS.adminPin)===document.getElementById('pin-in').value);
   document.getElementById('pin-ok').textContent=ADMIN_OK?'Acceso concedido':'PIN incorrecto';
-  ['emp-add','emp-save','usr-add','usr-save'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=!ADMIN_OK; });
-  if(!ADMIN_OK){ HIST_EDIT=false; }
-  renderHistorial();
+  document.getElementById('emp-add').disabled=!ADMIN_OK;
+  document.getElementById('emp-save').disabled=!ADMIN_OK;
+  document.getElementById('usr-add').disabled=!ADMIN_OK;
+  document.getElementById('usr-save').disabled=!ADMIN_OK;
+  if(!ADMIN_OK){ HIST_EDIT=false; renderHistorial(); }
 }
 function renderEmpresasTable(){
   if(!isAdmin()){ document.getElementById('emp-table').innerHTML=''; return; }
@@ -653,7 +666,7 @@ function empSaveAll(){
   const rows=document.querySelectorAll('#emp-table tbody tr'); const list=[];
   rows.forEach(tr=>{
     const get=f=>tr.querySelector(`[data-f="${f}"]`).value.trim();
-    list.push({id:get('id'),razon:get('razon').toUpperCase(),ruc:get('ruc'),direccion=get('direccion').toUpperCase(),telefono:get('telefono'),logo=getEmpresas()[tr.dataset.idx].logo||''});
+    list.push({id:get('id'),razon:get('razon').toUpperCase(),ruc:get('ruc'),direccion:get('direccion').toUpperCase(),telefono:get('telefono'),logo:getEmpresas()[tr.dataset.idx].logo||''});
   });
   saveJSON(LS.empresas,list); alert('Empresas guardadas.'); renderEmpresasTable(); if(CURRENT_USER) setHeaderEmpresa(getEmpresaById(CURRENT_USER.empresaId));
 }
@@ -720,25 +733,21 @@ function guardarPlanilla(){
   detalles.forEach(d=>{ idc++; hist.push({ id:idc, serie, num, fecha, dni:CURRENT_USER.dni, email:(CURRENT_USER.email||'').toLowerCase(), trabajador:`${CURRENT_USER.nombres} ${CURRENT_USER.apellidos}`, proyecto:d.proyecto, destino:d.destino, motivo:d.motivo, pc:d.pc, monto:d.monto, total:totalPlanilla });});
   saveJSON(LS.historial,hist); localStorage.setItem(LS.histId, String(idc));
 
-  if(window.jsPDF){
-    const doc=new jsPDF(); const emp=getEmpresaById(CURRENT_USER.empresaId);
-    if(emp?.logo){ doc.addImage(emp.logo, emp.logo.startsWith('data:image/png')?'PNG':'JPEG', 15, 12, 38, 10); }
-    doc.setFontSize(8); doc.setFont(undefined,'bold'); doc.text(emp?.razon||'',195,15,{align:'right'});
-    doc.setFont(undefined,'normal'); if(emp?.ruc) doc.text(`R.U.C. ${emp.ruc}`,195,19,{align:'right'}); if(emp?.direccion) doc.text(emp.direccion,195,23,{align:'right'}); if(emp?.telefono) doc.text(`Telf.: ${emp.telefono}`,195,27,{align:'right'});
-    doc.setFontSize(12); doc.setFont(undefined,'bold'); doc.text(`PLANILLA POR GASTO DE MOVILIDAD - Nro. ${serie}-${num}`, doc.internal.pageSize.getWidth()/2,45,{align:'center'});
-    doc.setFontSize(10); doc.setFont(undefined,'normal'); doc.text(`Fecha de Emisión: ${fecha}`,15,60); doc.text(`Trabajador: ${CURRENT_USER.nombres} ${CURRENT_USER.apellidos}`,15,67); doc.text(`D.N.I.: ${CURRENT_USER.dni}`,150,67);
-    let y=80; doc.setFont(undefined,'bold'); doc.text('#',15,y); doc.text('Destino',28,y); doc.text('Motivo',78,y); doc.text('Proyecto',128,y); doc.text('PC',165,y); doc.text('Monto (S/)',195,y,{align:'right'});
-    doc.line(15,y+2,195,y+2); y+=8; doc.setFont(undefined,'normal');
-    detalles.forEach((d,i)=>{ doc.text(String(i+1),15,y); doc.text(doc.splitTextToSize(d.destino,45),28,y); doc.text(doc.splitTextToSize(d.motivo,45),78,y); doc.text(doc.splitTextToSize(d.proyecto,30),128,y); doc.text(d.pc,165,y); doc.text(d.monto.toFixed(2),195,y,{align:'right'}); y+=10;});
-    doc.line(15,y,195,y); y+=7; doc.setFont(undefined,'bold'); doc.text('Total S/.',165,y); doc.text(totalPlanilla.toFixed(2),195,y,{align:'right'});
-    doc.line(80,y+40,140,y+40); doc.text('Firma del Trabajador', doc.internal.pageSize.getWidth()/2,y+45,{align:'center'});
-    doc.setFontSize(7); doc.setTextColor(100);
-    const disclaimer="Base Legal: Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del articulo 21° del Reglamento de la ley del Impuesto a la Renta, Nota: La falta de consignación de la fecha en que se incurrió en el gasto, nombres y apellidos de cada trabajador, número de DNI, motivo y destino del desplazamiento y monto gastado, respecto a cada desplazamiento sólo inhabilita la planilla para la sustentación del gasto que corresponda a tal desplazamiento. (*) Numeración de la planilla.";
-    doc.text(doc.splitTextToSize(disclaimer,180),15, doc.internal.pageSize.getHeight()-20);
-    doc.save(`Planilla_${serie}-${num}.pdf`);
-  }else{
-    alert('PDF no disponible (jsPDF no cargó).');
-  }
+  const doc=new jsPDF(); const emp=getEmpresaById(CURRENT_USER.empresaId);
+  if(emp?.logo){ doc.addImage(emp.logo, emp.logo.startsWith('data:image/png')?'PNG':'JPEG', 15, 12, 38, 10); }
+  doc.setFontSize(8); doc.setFont(undefined,'bold'); doc.text(emp?.razon||'',195,15,{align:'right'});
+  doc.setFont(undefined,'normal'); if(emp?.ruc) doc.text(`R.U.C. ${emp.ruc}`,195,19,{align:'right'}); if(emp?.direccion) doc.text(emp.direccion,195,23,{align:'right'}); if(emp?.telefono) doc.text(`Telf.: ${emp.telefono}`,195,27,{align:'right'});
+  doc.setFontSize(12); doc.setFont(undefined,'bold'); doc.text(`PLANILLA POR GASTO DE MOVILIDAD - Nro. ${serie}-${num}`, doc.internal.pageSize.getWidth()/2,45,{align:'center'});
+  doc.setFontSize(10); doc.setFont(undefined,'normal'); doc.text(`Fecha de Emisión: ${fecha}`,15,60); doc.text(`Trabajador: ${CURRENT_USER.nombres} ${CURRENT_USER.apellidos}`,15,67); doc.text(`D.N.I.: ${CURRENT_USER.dni}`,150,67);
+  let y=80; doc.setFont(undefined,'bold'); doc.text('#',15,y); doc.text('Destino',28,y); doc.text('Motivo',78,y); doc.text('Proyecto',128,y); doc.text('PC',165,y); doc.text('Monto (S/)',195,y,{align:'right'});
+  doc.line(15,y+2,195,y+2); y+=8; doc.setFont(undefined,'normal');
+  detalles.forEach((d,i)=>{ doc.text(String(i+1),15,y); doc.text(doc.splitTextToSize(d.destino,45),28,y); doc.text(doc.splitTextToSize(d.motivo,45),78,y); doc.text(doc.splitTextToSize(d.proyecto,30),128,y); doc.text(d.pc,165,y); doc.text(d.monto.toFixed(2),195,y,{align:'right'}); y+=10;});
+  doc.line(15,y,195,y); y+=7; doc.setFont(undefined,'bold'); doc.text('Total S/.',165,y); doc.text(totalPlanilla.toFixed(2),195,y,{align:'right'});
+  doc.line(80,y+40,140,y+40); doc.text('Firma del Trabajador', doc.internal.pageSize.getWidth()/2,y+45,{align:'center'});
+  doc.setFontSize(7); doc.setTextColor(100);
+  const disclaimer="Base Legal: Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del articulo 21° del Reglamento de la ley del Impuesto a la Renta, Nota: La falta de consignación de la fecha en que se incurrió en el gasto, nombres y apellidos de cada trabajador, número de DNI, motivo y destino del desplazamiento y monto gastado, respecto a cada desplazamiento sólo inhabilita la planilla para la sustentación del gasto que corresponda a tal desplazamiento. (*) Numeración de la planilla.";
+  doc.text(doc.splitTextToSize(disclaimer,180),15, doc.internal.pageSize.getHeight()-20);
+  doc.save(`Planilla_${serie}-${num}.pdf`);
 
   alert(`Planilla ${serie}-${num} guardada y exportada.`);
   renderRows(); onTrabajadorChange(); show('hist');
@@ -772,7 +781,7 @@ function saveModal(){
   saveJSON(LS.usuarios,list); closeModal(); renderTrabajadoresSelect(); onTrabajadorChange();
 }
 
-/* ======= DEMO helpers ======= */
+/* ======== DEMO helpers ======== */
 function resetDemo(){
   if(!confirm('Esto restaurará los datos de DEMO locales (no afecta tu base real). ¿Continuar?')) return;
   localStorage.removeItem(LS.empresas);
@@ -780,7 +789,7 @@ function resetDemo(){
   localStorage.removeItem(LS.counters);
   localStorage.removeItem(LS.historial);
   localStorage.removeItem(LS.histId);
-  seedIfNeeded();
+  seedIfNeeded(); // repuebla demo
   alert('Datos DEMO restablecidos.');
   renderEmpresasTable(); renderUsuariosTable(); renderTrabajadoresSelect(); onTrabajadorChange(); renderHistorial();
 }
