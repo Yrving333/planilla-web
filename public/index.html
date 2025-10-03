@@ -263,7 +263,8 @@ const ADMIN_PIN_DEFAULT = '1234';
 const SP = { siteUrl:'https://tu-tenant.sharepoint.com/sites/Padova', lists:{empresas:'Empresas',usuarios:'Usuarios',historial:'Historial',counters:'Counters'}, scopes:['https://tu-tenant.sharepoint.com/.default'] };
 const MSAL_CONFIG = { auth:{ clientId:'', authority:'https://login.microsoftonline.com/<tenantId>' }, cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:true } };
 
-window.jsPDF = window.jspdf.jsPDF;
+// Evitar error si jsPDF aún no está cargado
+try{ if(window.jspdf && window.jspdf.jsPDF){ window.jsPDF = window.jspdf.jsPDF; } }catch(_){}
 
 /* ======= Persistencia ======= */
 const LS={empresas:'mv_empresas',usuarios:'mv_trabajadores',counters:'mv_countersByDNI',historial:'mv_historial',histId:'mv_histId',adminPin:'mv_adminPin'};
@@ -652,7 +653,7 @@ function empSaveAll(){
   const rows=document.querySelectorAll('#emp-table tbody tr'); const list=[];
   rows.forEach(tr=>{
     const get=f=>tr.querySelector(`[data-f="${f}"]`).value.trim();
-    list.push({id:get('id'),razon:get('razon').toUpperCase(),ruc:get('ruc'),direccion=get('direccion').toUpperCase(),telefono:get('telefono'),logo:getEmpresas()[tr.dataset.idx].logo||''});
+    list.push({id:get('id'),razon:get('razon').toUpperCase(),ruc:get('ruc'),direccion=get('direccion').toUpperCase(),telefono:get('telefono'),logo=getEmpresas()[tr.dataset.idx].logo||''});
   });
   saveJSON(LS.empresas,list); alert('Empresas guardadas.'); renderEmpresasTable(); if(CURRENT_USER) setHeaderEmpresa(getEmpresaById(CURRENT_USER.empresaId));
 }
@@ -719,21 +720,25 @@ function guardarPlanilla(){
   detalles.forEach(d=>{ idc++; hist.push({ id:idc, serie, num, fecha, dni:CURRENT_USER.dni, email:(CURRENT_USER.email||'').toLowerCase(), trabajador:`${CURRENT_USER.nombres} ${CURRENT_USER.apellidos}`, proyecto:d.proyecto, destino:d.destino, motivo:d.motivo, pc:d.pc, monto:d.monto, total:totalPlanilla });});
   saveJSON(LS.historial,hist); localStorage.setItem(LS.histId, String(idc));
 
-  const doc=new jsPDF(); const emp=getEmpresaById(CURRENT_USER.empresaId);
-  if(emp?.logo){ doc.addImage(emp.logo, emp.logo.startsWith('data:image/png')?'PNG':'JPEG', 15, 12, 38, 10); }
-  doc.setFontSize(8); doc.setFont(undefined,'bold'); doc.text(emp?.razon||'',195,15,{align:'right'});
-  doc.setFont(undefined,'normal'); if(emp?.ruc) doc.text(`R.U.C. ${emp.ruc}`,195,19,{align:'right'}); if(emp?.direccion) doc.text(emp.direccion,195,23,{align:'right'}); if(emp?.telefono) doc.text(`Telf.: ${emp.telefono}`,195,27,{align:'right'});
-  doc.setFontSize(12); doc.setFont(undefined,'bold'); doc.text(`PLANILLA POR GASTO DE MOVILIDAD - Nro. ${serie}-${num}`, doc.internal.pageSize.getWidth()/2,45,{align:'center'});
-  doc.setFontSize(10); doc.setFont(undefined,'normal'); doc.text(`Fecha de Emisión: ${fecha}`,15,60); doc.text(`Trabajador: ${CURRENT_USER.nombres} ${CURRENT_USER.apellidos}`,15,67); doc.text(`D.N.I.: ${CURRENT_USER.dni}`,150,67);
-  let y=80; doc.setFont(undefined,'bold'); doc.text('#',15,y); doc.text('Destino',28,y); doc.text('Motivo',78,y); doc.text('Proyecto',128,y); doc.text('PC',165,y); doc.text('Monto (S/)',195,y,{align:'right'});
-  doc.line(15,y+2,195,y+2); y+=8; doc.setFont(undefined,'normal');
-  detalles.forEach((d,i)=>{ doc.text(String(i+1),15,y); doc.text(doc.splitTextToSize(d.destino,45),28,y); doc.text(doc.splitTextToSize(d.motivo,45),78,y); doc.text(doc.splitTextToSize(d.proyecto,30),128,y); doc.text(d.pc,165,y); doc.text(d.monto.toFixed(2),195,y,{align:'right'}); y+=10;});
-  doc.line(15,y,195,y); y+=7; doc.setFont(undefined,'bold'); doc.text('Total S/.',165,y); doc.text(totalPlanilla.toFixed(2),195,y,{align:'right'});
-  doc.line(80,y+40,140,y+40); doc.text('Firma del Trabajador', doc.internal.pageSize.getWidth()/2,y+45,{align:'center'});
-  doc.setFontSize(7); doc.setTextColor(100);
-  const disclaimer="Base Legal: Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del articulo 21° del Reglamento de la ley del Impuesto a la Renta, Nota: La falta de consignación de la fecha en que se incurrió en el gasto, nombres y apellidos de cada trabajador, número de DNI, motivo y destino del desplazamiento y monto gastado, respecto a cada desplazamiento sólo inhabilita la planilla para la sustentación del gasto que corresponda a tal desplazamiento. (*) Numeración de la planilla.";
-  doc.text(doc.splitTextToSize(disclaimer,180),15, doc.internal.pageSize.getHeight()-20);
-  doc.save(`Planilla_${serie}-${num}.pdf`);
+  if(window.jsPDF){
+    const doc=new jsPDF(); const emp=getEmpresaById(CURRENT_USER.empresaId);
+    if(emp?.logo){ doc.addImage(emp.logo, emp.logo.startsWith('data:image/png')?'PNG':'JPEG', 15, 12, 38, 10); }
+    doc.setFontSize(8); doc.setFont(undefined,'bold'); doc.text(emp?.razon||'',195,15,{align:'right'});
+    doc.setFont(undefined,'normal'); if(emp?.ruc) doc.text(`R.U.C. ${emp.ruc}`,195,19,{align:'right'}); if(emp?.direccion) doc.text(emp.direccion,195,23,{align:'right'}); if(emp?.telefono) doc.text(`Telf.: ${emp.telefono}`,195,27,{align:'right'});
+    doc.setFontSize(12); doc.setFont(undefined,'bold'); doc.text(`PLANILLA POR GASTO DE MOVILIDAD - Nro. ${serie}-${num}`, doc.internal.pageSize.getWidth()/2,45,{align:'center'});
+    doc.setFontSize(10); doc.setFont(undefined,'normal'); doc.text(`Fecha de Emisión: ${fecha}`,15,60); doc.text(`Trabajador: ${CURRENT_USER.nombres} ${CURRENT_USER.apellidos}`,15,67); doc.text(`D.N.I.: ${CURRENT_USER.dni}`,150,67);
+    let y=80; doc.setFont(undefined,'bold'); doc.text('#',15,y); doc.text('Destino',28,y); doc.text('Motivo',78,y); doc.text('Proyecto',128,y); doc.text('PC',165,y); doc.text('Monto (S/)',195,y,{align:'right'});
+    doc.line(15,y+2,195,y+2); y+=8; doc.setFont(undefined,'normal');
+    detalles.forEach((d,i)=>{ doc.text(String(i+1),15,y); doc.text(doc.splitTextToSize(d.destino,45),28,y); doc.text(doc.splitTextToSize(d.motivo,45),78,y); doc.text(doc.splitTextToSize(d.proyecto,30),128,y); doc.text(d.pc,165,y); doc.text(d.monto.toFixed(2),195,y,{align:'right'}); y+=10;});
+    doc.line(15,y,195,y); y+=7; doc.setFont(undefined,'bold'); doc.text('Total S/.',165,y); doc.text(totalPlanilla.toFixed(2),195,y,{align:'right'});
+    doc.line(80,y+40,140,y+40); doc.text('Firma del Trabajador', doc.internal.pageSize.getWidth()/2,y+45,{align:'center'});
+    doc.setFontSize(7); doc.setTextColor(100);
+    const disclaimer="Base Legal: Inciso a1) del artículo 37° del TUO de la Ley del Impuesto a la Renta e inciso v) del articulo 21° del Reglamento de la ley del Impuesto a la Renta, Nota: La falta de consignación de la fecha en que se incurrió en el gasto, nombres y apellidos de cada trabajador, número de DNI, motivo y destino del desplazamiento y monto gastado, respecto a cada desplazamiento sólo inhabilita la planilla para la sustentación del gasto que corresponda a tal desplazamiento. (*) Numeración de la planilla.";
+    doc.text(doc.splitTextToSize(disclaimer,180),15, doc.internal.pageSize.getHeight()-20);
+    doc.save(`Planilla_${serie}-${num}.pdf`);
+  }else{
+    alert('PDF no disponible (jsPDF no cargó).');
+  }
 
   alert(`Planilla ${serie}-${num} guardada y exportada.`);
   renderRows(); onTrabajadorChange(); show('hist');
