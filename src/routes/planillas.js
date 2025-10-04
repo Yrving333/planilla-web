@@ -1,137 +1,57 @@
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.js';
-import { query, getClient } from '../db.js';
-import { normalize, serieFromName } from '../utils.js';
+import jwt from 'jsonwebtoken';
+import { q } from '../db.js';
 
-const TOPE = Number(process.env.TOPE || 45);
-const router = Router();
+const r = Router();
 
-/** Empresas: ?simple=1 devuelve campos mínimos (sin token) */
-router.get('/empresas', async (req, res) => {
-  try {
-    const simple = String(req.query.simple || '') === '1';
-    const cols = simple ? 'id, razon, ruc' : 'id, razon, ruc, direccion, telefono, logo';
-    const { rows } = await query(`SELECT ${cols} FROM empresas ORDER BY razon`);
-    if (!simple) return requireAuth(req, res, () => res.json(rows));
-    res.json(rows);
-  } catch (e) {
-    console.error('GET /empresas', e);
-    res.status(500).json({ error: 'Error listando empresas' });
-  }
+function auth(req, res, next) {
+  const m = (req.headers.authorization||'').match(/^Bearer (.+)$/i);
+  if (!m) return res.status(401).json({ error: 'token requerido' });
+  try { req.user = jwt.verify(m[1], process.env.JWT_SECRET); return next(); }
+  catch { return res.status(401).json({ error: 'token inválido' }); }
+}
+
+r.get('/historial', auth, async (req, res) => {
+  const dni = req.query.dni || req.user?.dni;
+  if (!dni) return res.json([]);
+  const { rows } = await q(`
+    select d.id, p.serie, p.num, to_char(p.fecha,'YYYY-MM-DD') as fecha,
+           p.dni, p.trabajador, p.email, d.proyecto, d.destino, d.motivo, d.pc, d.monto, p.total
+      from planilla p
+      join planilla_detalle d on d.planilla_id = p.id
+     where p.dni = $1
+     order by p.created_at desc, d.id desc
+  `, [dni]);
+  res.json(rows);
 });
 
-/** Usuarios (admin ve todos; usuario solo el suyo) */
-router.get('/usuarios', requireAuth, async (req, res) => {
-  try {
-    const isAdmin = req.user.rol === 'ADMIN_PADOVA';
-    const params = [];
-    let sql = `SELECT id, activo, dni, nombres, apellidos, email, rol, empresa_id, proy_def, proyectos FROM usuarios`;
-    if (!isAdmin) { sql += ` WHERE LOWER(email) = $1`; params.push(req.user.email.toLowerCase()); }
-    sql += ` ORDER BY apellidos, nombres`;
-    const { rows } = await query(sql, params);
-    res.json(rows);
-  } catch (e) {
-    console.error('GET /usuarios', e);
-    res.status(500).json({ error: 'Error listando usuarios' });
+r.post('/historial', auth, async (req, res) => {
+  const records = req.body?.records || [];
+  if (!Array.isArray(records) || !records.length) return res.json({ ok: true, saved: 0 });
+
+  const f = records[0];
+  const up = await q(`
+    insert into planilla(serie,num,fecha,usuario_id,dni,trabajador,email,total)
+    values ($1,$2,$3,null,$4,$5,$6,$7)
+    on conflict (serie,num) do update set total = excluded.total
+    returning id
+  `, [f.serie, f.num, f.fecha, f.dni, f.trabajador, f.email, f.total]);
+
+  const pid = up.rows[0].id;
+
+  await q(`delete from planilla_detalle where planilla_id=$1`, [pid]);
+
+  const params = [];
+  const values = records.map((r, i) => {
+    params.push(pid, r.proyecto||'', r.destino||'', r.motivo||'', r.pc||'', r.monto||0);
+    const o = params.length;
+    return `($${o-5},$${o-4},$${o-3},$${o-2},$${o-1},$${o})`;
+  });
+
+  if (values.length) {
+    await q(`insert into planilla_detalle(planilla_id,proyecto,destino,motivo,pc,monto) values ${values.join(',')}`, params);
   }
+  res.json({ ok: true, saved: records.length });
 });
 
-/** Acumulado del día (por dni/fecha) */
-router.get('/acumulado', requireAuth, async (req, res) => {
-  try {
-    const dni = String(req.query.dni || '').trim();
-    const fecha = String(req.query.fecha || '').trim();
-    if (!dni || !fecha) return res.status(400).json({ error: 'dni y fecha requeridos' });
-    if (req.user.rol !== 'ADMIN_PADOVA' && dni !== req.user.dni) return res.status(403).json({ error: 'No autorizado' });
-
-    const { rows } = await query(
-      `SELECT COALESCE(SUM(total),0) AS acumulado FROM planilla WHERE dni=$1 AND fecha=$2`,
-      [dni, fecha]
-    );
-    res.json({ acumulado: Number(rows[0]?.acumulado || 0) });
-  } catch (e) {
-    console.error('GET /acumulado', e);
-    res.status(500).json({ error: 'Error consultando acumulado' });
-  }
-});
-
-/** Crear planilla + detalle */
-router.post('/planillas', requireAuth, async (req, res) => {
-  const client = await getClient();
-  try {
-    const { fecha, detalles } = req.body || {};
-    if (!fecha || !Array.isArray(detalles) || detalles.length === 0)
-      return res.status(400).json({ error: 'fecha y detalles requeridos' });
-
-    const u = req.user;
-    const serie = serieFromName(normalize(u.nombres), normalize(u.apellidos));
-
-    const { rows: rn } = await client.query(
-      `SELECT COALESCE(MAX(num),0)+1 AS next FROM planilla WHERE dni=$1`, [u.dni]
-    );
-    const num = Number(rn[0].next || 1);
-    const total = detalles.reduce((s, d) => s + Number(d.monto || 0), 0);
-
-    const { rows: ra } = await client.query(
-      `SELECT COALESCE(SUM(total),0) AS acumulado FROM planilla WHERE dni=$1 AND fecha=$2`,
-      [u.dni, fecha]
-    );
-    const acumuladoHoy = Number(ra[0]?.acumulado || 0);
-    if (acumuladoHoy + total > TOPE) return res.status(400).json({ error: `Tope diario ${TOPE} excedido` });
-
-    await client.query('BEGIN');
-
-    const trabajador = `${u.nombres} ${u.apellidos}`;
-    const { rows: rCab } = await client.query(
-      `INSERT INTO planilla (serie,num,fecha,usuario_id,dni,trabajador,email,total)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING id`,
-      [serie, num, fecha, u.id, u.dni, trabajador, u.email.toLowerCase(), total]
-    );
-    const planillaId = rCab[0].id;
-
-    const text = `INSERT INTO planilla_detalle (planilla_id, proyecto, destino, motivo, pc, monto)
-                  VALUES ($1,$2,$3,$4,$5,$6)`;
-    for (const d of detalles) {
-      await client.query(text, [
-        planillaId,
-        (d.proyecto || u.proy_def || '').toString().toUpperCase(),
-        (d.destino  || '').toString().toUpperCase(),
-        (d.motivo   || '').toString().toUpperCase(),
-        (d.pc       || '').toString(),
-        Number(d.monto || 0)
-      ]);
-    }
-
-    await client.query('COMMIT');
-    res.json({ serie, num, total });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch(_) {}
-    console.error('POST /planillas', e);
-    res.status(500).json({ error: 'Error guardando planilla' });
-  } finally {
-    client.release();
-  }
-});
-
-/** Historial (admin: todos; usuario: sólo los suyos) */
-router.get('/planillas', requireAuth, async (req, res) => {
-  try {
-    const isAdmin = req.user.rol === 'ADMIN_PADOVA';
-    const params = [];
-    let sql =
-      `SELECT p.serie, p.num, p.fecha, p.trabajador, p.email, p.dni, p.total,
-              d.proyecto, d.destino, d.motivo, d.pc, d.monto
-         FROM planilla p
-         JOIN planilla_detalle d ON d.planilla_id = p.id`;
-    if (!isAdmin) { sql += ` WHERE LOWER(p.email) = $1`; params.push(req.user.email.toLowerCase()); }
-    sql += ` ORDER BY p.fecha DESC, p.serie, p.num DESC, d.id ASC`;
-    const { rows } = await query(sql, params);
-    res.json(rows);
-  } catch (e) {
-    console.error('GET /planillas', e);
-    res.status(500).json({ error: 'Error listando planillas' });
-  }
-});
-
-export default router;
+export default r;

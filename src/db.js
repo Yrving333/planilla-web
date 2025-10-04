@@ -1,15 +1,6 @@
 import pg from 'pg';
-const { Pool } = pg;
-
-const pool = new Pool({
+export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // requerido por Neon en Render
+  ssl: { rejectUnauthorized: false },
 });
-
-export async function query(text, params) {
-  return pool.query(text, params);
-}
-export async function getClient() {
-  return pool.connect();
-}
-
+export const q = (text, params) => pool.query(text, params);
