@@ -722,7 +722,7 @@ function empSaveAll(){
   const rows=document.querySelectorAll('#emp-table tbody tr'); const list=[];
   rows.forEach(tr=>{
     const get=f=>tr.querySelector(`[data-f="${f}"]`).value.trim();
-    list.push({id:get('id'),razon:get('razon').toUpperCase(),ruc:get('ruc'),direccion:get('direccion').toUpperCase(),telefono:get('telefono'),logo:getEmpresas()[tr.dataset.idx].logo||''});
+    list.push({id:get('id'),razon:get('razon').toUpperCase(),ruc:get('ruc'),direccion:get('direccion').toUpperCase(),telefono:get('telefono'),logo=getEmpresas()[tr.dataset.idx].logo||''});
   });
   saveJSON(LS.empresas,list); alert('Empresas guardadas.'); renderEmpresasTable(); if(CURRENT_USER) setHeaderEmpresa(getEmpresaById(CURRENT_USER.empresaId));
 }
