@@ -1,3 +1,4 @@
+// server.mjs
 import express from 'express';
 import morgan from 'morgan';
 import cors from 'cors';
@@ -7,6 +8,7 @@ import { fileURLToPath } from 'url';
 
 import authRouter from './src/routes/auth.js';
 import planillasRouter from './src/routes/planillas.js';
+import adminRouter from './src/routes/admin.js';            // ← NUEVO
 import { query } from './src/db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -66,6 +68,7 @@ app.post('/api/echo', (req, res) => {
 // ---- Rutas de negocio
 app.use('/api', authRouter);
 app.use('/api', planillasRouter);
+app.use('/api', adminRouter); // ← NUEVO
 
 // ---- Static frontend
 app.use(express.static(path.join(__dirname, 'public')));
